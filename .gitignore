@@ -68,3 +68,4 @@ package-lock.json
 .knowns/*
 !.knowns/docs/
 !.knowns/docs/**
+README1.md

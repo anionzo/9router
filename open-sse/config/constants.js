@@ -149,6 +149,18 @@ export const PROVIDERS = {
     // Kiro OAuth endpoints
     tokenUrl: "https://prod.us-east-1.auth.desktop.kiro.dev/refreshToken",
     authUrl: "https://prod.us-east-1.auth.desktop.kiro.dev"
+  },
+  cursor: {
+    baseUrl: "https://api2.cursor.sh",
+    chatPath: "/aiserver.v1.ChatService/StreamUnifiedChatWithTools",
+    format: "cursor",
+    headers: {
+      "connect-accept-encoding": "gzip",
+      "connect-protocol-version": "1",
+      "Content-Type": "application/connect+proto",
+      "User-Agent": "connect-es/1.6.1"
+    },
+    clientVersion: "1.1.3"
   }
 };
 
@@ -210,7 +222,7 @@ export const BACKOFF_CONFIG = {
 export const COOLDOWN_MS = {
   unauthorized: 2 * 60 * 1000,       // 401 → 30 min
   paymentRequired: 2 * 60 * 1000,    // 402/403 → 30 min
-  notFound: 2 * 60 * 60 * 1000,      // 404 → 12 hours
+  notFound: 2 * 60 * 1000,      // 404 → 2 minutes
   transient: 30 * 1000,               // 408/500/502/503/504 → 1 min
   requestNotAllowed: 5 * 1000,        // "Request not allowed" → 5 sec
   // Legacy aliases for backward compatibility
