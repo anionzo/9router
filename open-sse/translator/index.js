@@ -34,6 +34,7 @@ function ensureInitialized() {
   require("./request/openai-to-gemini.js");
   require("./request/openai-responses.js");
   require("./request/openai-to-kiro.js");
+  require("./request/openai-to-cursor.js");
   
   // Response translators
   require("./response/claude-to-openai.js");
@@ -41,6 +42,7 @@ function ensureInitialized() {
   require("./response/gemini-to-openai.js");
   require("./response/openai-responses.js");
   require("./response/kiro-to-openai.js");
+  require("./response/cursor-to-openai.js");
 }
 
 // Translate request: source -> openai -> target
@@ -69,11 +71,6 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
       }
     }
 
-    // Step 1.5: Filter to clean OpenAI format (only when target is OpenAI)
-    if (targetFormat === FORMATS.OPENAI) {
-      result = filterToOpenAIFormat(result);
-    }
-
     // Step 2: openai -> target (if target is not openai)
     if (targetFormat !== FORMATS.OPENAI) {
       const fromOpenAI = requestRegistry.get(`${FORMATS.OPENAI}:${targetFormat}`);
@@ -81,6 +78,12 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
         result = fromOpenAI(model, result, stream, credentials);
       }
     }
+  }
+
+  // Always normalize to clean OpenAI format when target is OpenAI
+  // This handles hybrid requests (e.g., OpenAI messages + Claude tools)
+  if (targetFormat === FORMATS.OPENAI) {
+    result = filterToOpenAIFormat(result);
   }
 
   // Final step: prepare request for Claude format endpoints

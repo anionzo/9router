@@ -3,7 +3,7 @@ import { translateRequest, needsTranslation } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
 import { createSSETransformStreamWithLogger, createPassthroughStreamWithLogger, COLORS } from "../utils/stream.js";
 import { createStreamController, pipeWithDisconnect } from "../utils/streamHandler.js";
-import { addBufferToUsage } from "../utils/usageTracking.js";
+import { addBufferToUsage, filterUsageForFormat } from "../utils/usageTracking.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
@@ -435,9 +435,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
       : responseBody;
 
-    // Add buffer to usage for client (to prevent CLI context errors)
+    // Add buffer and filter usage for client (to prevent CLI context errors)
     if (translatedResponse?.usage) {
-      translatedResponse.usage = addBufferToUsage(translatedResponse.usage);
+      const buffered = addBufferToUsage(translatedResponse.usage);
+      translatedResponse.usage = filterUsageForFormat(buffered, sourceFormat);
     }
 
     return {
@@ -467,15 +468,22 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Create transform stream with logger for streaming response
   let transformStream;
-  // For Codex provider, always translate response from openai-responses to openai format
-  // This ensures clients like Cursor get the expected chat completions format
-  const needsCodexTranslation = (provider === 'codex' || provider === 'openai') && targetFormat === 'openai-responses';
-  if (needsCodexTranslation || needsTranslation(targetFormat, sourceFormat)) {
-    // For Codex, translate FROM openai-responses TO openai (client's expected format)
-    const responseSourceFormat = needsCodexTranslation ? 'openai-responses' : targetFormat;
-    const responseTargetFormat = needsCodexTranslation ? 'openai' : sourceFormat;
-    transformStream = createSSETransformStreamWithLogger(responseSourceFormat, responseTargetFormat, provider, reqLogger, toolNameMap, model, connectionId, body);
+  // For Codex provider, translate response from openai-responses to openai (Chat Completions) format
+  // UNLESS client originally sent in openai-responses format (like Droid CLI) - they expect same format back
+  const needsCodexTranslation = provider === 'codex' 
+    && targetFormat === 'openai-responses' 
+    && sourceFormat !== 'openai-responses';
+
+  if (needsCodexTranslation) {
+    // Codex returns openai-responses, translate to openai (Chat Completions) that clients expect
+    log?.debug?.("STREAM", `Codex translation mode: openai-responses → openai`);
+    transformStream = createSSETransformStreamWithLogger('openai-responses', 'openai', provider, reqLogger, toolNameMap, model, connectionId, body);
+  } else if (needsTranslation(targetFormat, sourceFormat)) {
+    // Standard translation for other providers
+    log?.debug?.("STREAM", `Translation mode: ${targetFormat} → ${sourceFormat}`);
+    transformStream = createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body);
   } else {
+    log?.debug?.("STREAM", `Standard passthrough mode`);
     transformStream = createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body);
   }
 
