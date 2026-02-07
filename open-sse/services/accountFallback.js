@@ -71,7 +71,7 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     };
   }
 
-  // Transient errors
+  // Transient errors (server-side issues where retry may help)
   const transientStatuses = [
     HTTP_STATUS.NOT_ACCEPTABLE, HTTP_STATUS.REQUEST_TIMEOUT,
     HTTP_STATUS.SERVER_ERROR, HTTP_STATUS.BAD_GATEWAY,
@@ -81,8 +81,8 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     return { shouldFallback: true, cooldownMs: COOLDOWN_MS.transient };
   }
 
-  // All other errors - fallback with transient cooldown
-  return { shouldFallback: true, cooldownMs: COOLDOWN_MS.transient };
+  // Default: Don't fallback for client errors (400, etc.) where retry won't help
+  return { shouldFallback: false, cooldownMs: 0 };
 }
 
 /**
