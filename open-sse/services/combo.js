@@ -62,6 +62,18 @@ export async function handleComboChat({ body, models, handleSingleModel, log }) 
       // Ignore JSON parse errors
     }
 
+    // Fallback: read Retry-After header if not in body
+    if (!retryAfter && result.headers) {
+      const retryAfterHeader = result.headers.get("Retry-After");
+      if (retryAfterHeader) {
+        const seconds = parseInt(retryAfterHeader, 10);
+        if (!isNaN(seconds) && seconds > 0) {
+          // Convert seconds to ISO timestamp
+          retryAfter = new Date(Date.now() + seconds * 1000).toISOString();
+        }
+      }
+    }
+
     // Track earliest retryAfter across all combo models
     if (retryAfter && (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter))) {
       earliestRetryAfter = retryAfter;
