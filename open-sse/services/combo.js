@@ -82,12 +82,12 @@ export async function handleComboChat({ body, models, handleSingleModel, log }) 
 
     // Fallback to next model
     lastError = errorText || String(result.status);
-    if (!lastStatus) lastStatus = result.status;
+    lastStatus = result.status; // Track the most recent failure status
     log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
   }
 
-  // All models failed
-  const status =  406;
+  // All models failed - use last status or default to 503
+  const status = lastStatus || 503;
   const msg = lastError || "All combo models unavailable";
 
   if (earliestRetryAfter) {
