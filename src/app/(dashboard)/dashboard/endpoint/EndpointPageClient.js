@@ -67,6 +67,9 @@ export default function APIPageClient({ machineId }) {
     setShowAddModal(true);
     // Empty list means "allow all models".
     setNewAllowedModels([]);
+    setNewModelSearch("");
+    setNewModelProvider("all");
+    fetchAvailableModels(null);
   };
 
   const closeCreateModal = () => {
@@ -129,7 +132,8 @@ export default function APIPageClient({ machineId }) {
   const fetchAvailableModels = async (preferredKey = null) => {
     setModelsLoading(true);
     try {
-      let modelList = [];
+      let scopedModels = [];
+      let allModels = [];
 
       if (preferredKey) {
         const res = await fetch("/api/v1/models", {
@@ -139,19 +143,18 @@ export default function APIPageClient({ machineId }) {
         });
         if (res.ok) {
           const data = await res.json();
-          modelList = normalizeModelList(data);
+          scopedModels = normalizeModelList(data);
         }
       }
 
-      if (modelList.length === 0) {
-        const fallbackRes = await fetch("/api/models");
-        if (fallbackRes.ok) {
-          const fallbackData = await fallbackRes.json();
-          modelList = normalizeModelList(fallbackData);
-        }
+      const fallbackRes = await fetch("/api/models");
+      if (fallbackRes.ok) {
+        const fallbackData = await fallbackRes.json();
+        allModels = normalizeModelList(fallbackData);
       }
 
-      setAvailableModels(modelList);
+      const merged = Array.from(new Set([...scopedModels, ...allModels])).sort();
+      setAvailableModels(merged);
     } catch (error) {
       console.log("Error fetching available models:", error);
       setAvailableModels([]);
@@ -179,7 +182,7 @@ export default function APIPageClient({ machineId }) {
       if (keysRes.ok) {
         const loadedKeys = keysData.keys || [];
         setKeys(loadedKeys);
-        await fetchAvailableModels(loadedKeys[0]?.key || null);
+        await fetchAvailableModels(null);
       }
     } catch (error) {
       console.log("Error fetching data:", error);
@@ -206,6 +209,9 @@ export default function APIPageClient({ machineId }) {
     setEditOwnerAge(key.ownerAge === null || key.ownerAge === undefined ? "" : String(key.ownerAge));
     setEditRequestLimit(key.requestLimit ? String(key.requestLimit) : "");
     setEditTokenLimit(key.tokenLimit ? String(key.tokenLimit) : "");
+    setEditModelSearch("");
+    setEditModelProvider("all");
+    fetchAvailableModels(null);
 
     const keyAllowed = Array.isArray(key.allowedModels) ? key.allowedModels : [];
     // Persist semantics: empty list means "allow all models".
