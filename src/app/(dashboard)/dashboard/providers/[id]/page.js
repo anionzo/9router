@@ -67,8 +67,8 @@ export default function ProviderDetailPage() {
   const fetchConnections = useCallback(async () => {
     try {
       const [connectionsRes, nodesRes] = await Promise.all([
-        fetch("/api/providers"),
-        fetch("/api/provider-nodes"),
+        fetch("/api/providers", { cache: "no-store" }),
+        fetch("/api/provider-nodes", { cache: "no-store" }),
       ]);
       const connectionsData = await connectionsRes.json();
       const nodesData = await nodesRes.json();
@@ -77,7 +77,21 @@ export default function ProviderDetailPage() {
         setConnections(filtered);
       }
       if (nodesRes.ok) {
-        const node = (nodesData.nodes || []).find((entry) => entry.id === providerId) || null;
+        let node = (nodesData.nodes || []).find((entry) => entry.id === providerId) || null;
+
+        // Newly created compatible nodes can be briefly unavailable on one worker.
+        // Retry a few times before showing "Provider not found".
+        if (!node && isCompatible) {
+          for (let attempt = 0; attempt < 3; attempt += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 150));
+            const retryRes = await fetch("/api/provider-nodes", { cache: "no-store" });
+            if (!retryRes.ok) continue;
+            const retryData = await retryRes.json();
+            node = (retryData.nodes || []).find((entry) => entry.id === providerId) || null;
+            if (node) break;
+          }
+        }
+
         setProviderNode(node);
       }
     } catch (error) {
@@ -1052,6 +1066,7 @@ function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthro
   });
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
+  const [saving, setSaving] = useState(false);
 
   const handleValidate = async () => {
     setValidating(true);
@@ -1070,13 +1085,38 @@ function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthro
     }
   };
 
-  const handleSubmit = () => {
-    onSave({
-      name: formData.name,
-      apiKey: formData.apiKey,
-      priority: formData.priority,
-      testStatus: validationResult === "success" ? "active" : "unknown",
-    });
+  const handleSubmit = async () => {
+    if (!provider || !formData.apiKey) return;
+
+    setSaving(true);
+    try {
+      let isValid = false;
+      try {
+        setValidating(true);
+        setValidationResult(null);
+        const res = await fetch("/api/providers/validate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider, apiKey: formData.apiKey }),
+        });
+        const data = await res.json();
+        isValid = !!data.valid;
+        setValidationResult(isValid ? "success" : "failed");
+      } catch {
+        setValidationResult("failed");
+      } finally {
+        setValidating(false);
+      }
+
+      await onSave({
+        name: formData.name,
+        apiKey: formData.apiKey,
+        priority: formData.priority,
+        testStatus: isValid ? "active" : "unknown",
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (!provider) return null;
@@ -1099,7 +1139,7 @@ function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthro
             className="flex-1"
           />
           <div className="pt-6">
-            <Button onClick={handleValidate} disabled={!formData.apiKey || validating} variant="secondary">
+            <Button onClick={handleValidate} disabled={!formData.apiKey || validating || saving} variant="secondary">
               {validating ? "Checking..." : "Check"}
             </Button>
           </div>
@@ -1124,8 +1164,8 @@ function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthro
           onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value) || 1 })}
         />
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={!formData.name || !formData.apiKey}>
-            Save
+          <Button onClick={handleSubmit} fullWidth disabled={!formData.name || !formData.apiKey || saving}>
+            {saving ? "Saving..." : "Save"}
           </Button>
           <Button onClick={onClose} variant="ghost" fullWidth>
             Cancel
@@ -1411,6 +1451,7 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
   const [testResult, setTestResult] = useState(null);
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (connection) {
@@ -1458,17 +1499,41 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
     }
   };
 
-  const handleSubmit = () => {
-    const updates = { name: formData.name, priority: formData.priority };
-    if (!isOAuth && formData.apiKey) {
-      updates.apiKey = formData.apiKey;
-      if (validationResult === "success") {
-        updates.testStatus = "active";
-        updates.lastError = null;
-        updates.lastErrorAt = null;
+  const handleSubmit = async () => {
+    setSaving(true);
+    try {
+      const updates = { name: formData.name, priority: formData.priority };
+      if (!isOAuth && formData.apiKey) {
+        updates.apiKey = formData.apiKey;
+        let isValid = validationResult === "success";
+        if (!isValid) {
+          try {
+            setValidating(true);
+            setValidationResult(null);
+            const res = await fetch("/api/providers/validate", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ provider: connection.provider, apiKey: formData.apiKey }),
+            });
+            const data = await res.json();
+            isValid = !!data.valid;
+            setValidationResult(isValid ? "success" : "failed");
+          } catch {
+            setValidationResult("failed");
+          } finally {
+            setValidating(false);
+          }
+        }
+        if (isValid) {
+          updates.testStatus = "active";
+          updates.lastError = null;
+          updates.lastErrorAt = null;
+        }
       }
+      await onSave(updates);
+    } finally {
+      setSaving(false);
     }
-    onSave(updates);
   };
 
   if (!connection) return null;
@@ -1510,7 +1575,7 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
                 className="flex-1"
               />
               <div className="pt-6">
-                <Button onClick={handleValidate} disabled={!formData.apiKey || validating} variant="secondary">
+                <Button onClick={handleValidate} disabled={!formData.apiKey || validating || saving} variant="secondary">
                   {validating ? "Checking..." : "Check"}
                 </Button>
               </div>
@@ -1538,7 +1603,7 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
         )}
 
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth>Save</Button>
+          <Button onClick={handleSubmit} fullWidth disabled={saving}>{saving ? "Saving..." : "Save"}</Button>
           <Button onClick={onClose} variant="ghost" fullWidth>Cancel</Button>
         </div>
       </div>
