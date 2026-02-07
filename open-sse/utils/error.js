@@ -157,13 +157,22 @@ export function createErrorResult(statusCode, message, retryAfterMs = null) {
 export function unavailableResponse(statusCode, message, retryAfter, retryAfterHuman) {
   const retryAfterSec = Math.max(Math.ceil((new Date(retryAfter).getTime() - Date.now()) / 1000), 1);
   const msg = `${message} (${retryAfterHuman})`;
+  
+  // Build OpenAI-compatible error body with type/code fields
+  const errorBody = buildErrorBody(statusCode, msg);
+  
+  // Add machine-readable retry metadata to the JSON body
+  errorBody.error.retryAfter = retryAfter; // ISO timestamp
+  errorBody.error.retryAfterSeconds = retryAfterSec;
+  
   return new Response(
-    JSON.stringify({ error: { message: msg } }),
+    JSON.stringify(errorBody),
     {
       status: statusCode,
       headers: {
         "Content-Type": "application/json",
-        "Retry-After": String(retryAfterSec)
+        "Retry-After": String(retryAfterSec),
+        "Access-Control-Allow-Origin": "*"
       }
     }
   );
