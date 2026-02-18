@@ -65,8 +65,6 @@ package-lock.json
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
 
-# knowns (ignore all except docs)
-.knowns/*
-!.knowns/docs/
-!.knowns/docs/**
+# knowns
+.knowns/
 README1.md

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Card, CardSkeleton } from "@/shared/components";
 import { CLI_TOOLS } from "@/shared/constants/cliTools";
 import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
-import { ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard, DefaultToolCard } from "./components";
+import { ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard, AntigravityToolCard, DefaultToolCard } from "./components";
 import { useTranslations } from "next-intl";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
