@@ -5,8 +5,10 @@ import { Card, Button, Badge, Toggle, Input } from "@/shared/components";
 import { useTheme } from "@/shared/hooks/useTheme";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
+import { useTranslations } from "next-intl";
 
 export default function ProfilePage() {
+  const t = useTranslations();
   const { theme, setTheme, isDark } = useTheme();
   const [settings, setSettings] = useState({ fallbackStrategy: "fill-first" });
   const [loading, setLoading] = useState(true);
@@ -34,7 +36,7 @@ export default function ProfilePage() {
   const handlePasswordChange = async (e) => {
     e.preventDefault();
     if (passwords.new !== passwords.confirm) {
-      setPassStatus({ type: "error", message: "Passwords do not match" });
+      setPassStatus({ type: "error", message: t("profile.security.passwordMismatch") });
       return;
     }
 
@@ -54,13 +56,13 @@ export default function ProfilePage() {
       const data = await res.json();
 
       if (res.ok) {
-        setPassStatus({ type: "success", message: "Password updated successfully" });
+        setPassStatus({ type: "success", message: t("profile.security.passwordUpdated") });
         setPasswords({ current: "", new: "", confirm: "" });
       } else {
-        setPassStatus({ type: "error", message: data.error || "Failed to update password" });
+        setPassStatus({ type: "error", message: data.error || t("profile.security.passwordUpdateFailed") });
       }
     } catch (err) {
-      setPassStatus({ type: "error", message: "An error occurred" });
+      setPassStatus({ type: "error", message: t("profile.common.genericError") });
     } finally {
       setPassLoading(false);
     }
@@ -121,7 +123,7 @@ export default function ProfilePage() {
       const res = await fetch("/api/db?download=1");
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setDbStatus({ type: "error", message: data.error || "Failed to export database" });
+        setDbStatus({ type: "error", message: data.error || t("profile.data.exportFailed") });
         return;
       }
 
@@ -136,9 +138,9 @@ export default function ProfilePage() {
       anchor.click();
       anchor.remove();
       URL.revokeObjectURL(url);
-      setDbStatus({ type: "success", message: "Database exported" });
+      setDbStatus({ type: "success", message: t("profile.data.exportSuccess") });
     } catch (error) {
-      setDbStatus({ type: "error", message: "Failed to export database" });
+      setDbStatus({ type: "error", message: t("profile.data.exportFailed") });
     } finally {
       setDbExporting(false);
     }
@@ -159,13 +161,13 @@ export default function ProfilePage() {
       });
       const result = await res.json();
       if (!res.ok) {
-        setDbStatus({ type: "error", message: result.error || "Failed to import database" });
+        setDbStatus({ type: "error", message: result.error || t("profile.data.importFailed") });
         return;
       }
 
-      setDbStatus({ type: "success", message: "Database imported. Reload to apply." });
+      setDbStatus({ type: "success", message: t("profile.data.importSuccess") });
     } catch (error) {
-      setDbStatus({ type: "error", message: "Invalid JSON file" });
+      setDbStatus({ type: "error", message: t("profile.data.invalidJson") });
     } finally {
       setDbImporting(false);
       event.target.value = "";
@@ -187,13 +189,13 @@ export default function ProfilePage() {
               <span className="material-symbols-outlined text-2xl">computer</span>
             </div>
             <div>
-              <h2 className="text-xl font-semibold">Local Mode</h2>
-              <p className="text-text-muted">Running on your machine</p>
+              <h2 className="text-xl font-semibold">{t("profile.localMode.title")}</h2>
+              <p className="text-text-muted">{t("profile.localMode.subtitle")}</p>
             </div>
           </div>
           <div className="pt-4 border-t border-border">
             <p className="text-sm text-text-muted">
-              All data is stored locally in the <code className="bg-sidebar px-1 rounded">~/.9router/db.json</code> file.
+              {t("profile.localMode.desc")} <code className="bg-sidebar px-1 rounded">~/.9router/db.json</code> {t("profile.localMode.descSuffix")}
             </p>
           </div>
         </Card>
@@ -204,15 +206,13 @@ export default function ProfilePage() {
             <div className="p-2 rounded-lg bg-primary/10 text-primary">
               <span className="material-symbols-outlined text-[20px]">shield</span>
             </div>
-            <h3 className="text-lg font-semibold">Security</h3>
+            <h3 className="text-lg font-semibold">{t("profile.security.title")}</h3>
           </div>
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="font-medium">Require login</p>
-                <p className="text-sm text-text-muted">
-                  When ON, dashboard requires password. When OFF, access without login.
-                </p>
+                <p className="font-medium">{t("profile.security.requireLogin")}</p>
+                <p className="text-sm text-text-muted">{t("profile.security.requireLoginDesc")}</p>
               </div>
               <Toggle
                 checked={settings.requireLogin === true}
@@ -224,10 +224,10 @@ export default function ProfilePage() {
               <form onSubmit={handlePasswordChange} className="flex flex-col gap-4 pt-4 border-t border-border/50">
                 {settings.hasPassword && (
                   <div className="flex flex-col gap-2">
-                    <label className="text-sm font-medium">Current Password</label>
+                    <label className="text-sm font-medium">{t("profile.security.currentPassword")}</label>
                     <Input
                       type="password"
-                      placeholder="Enter current password"
+                      placeholder={t("profile.security.currentPasswordPlaceholder")}
                       value={passwords.current}
                       onChange={(e) => setPasswords({ ...passwords, current: e.target.value })}
                       required
@@ -243,20 +243,20 @@ export default function ProfilePage() {
                 )} */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="flex flex-col gap-2">
-                    <label className="text-sm font-medium">New Password</label>
+                    <label className="text-sm font-medium">{t("profile.security.newPassword")}</label>
                     <Input
                       type="password"
-                      placeholder="Enter new password"
+                      placeholder={t("profile.security.newPasswordPlaceholder")}
                       value={passwords.new}
                       onChange={(e) => setPasswords({ ...passwords, new: e.target.value })}
                       required
                     />
                   </div>
                   <div className="flex flex-col gap-2">
-                    <label className="text-sm font-medium">Confirm New Password</label>
+                    <label className="text-sm font-medium">{t("profile.security.confirmPassword")}</label>
                     <Input
                       type="password"
-                      placeholder="Confirm new password"
+                      placeholder={t("profile.security.confirmPasswordPlaceholder")}
                       value={passwords.confirm}
                       onChange={(e) => setPasswords({ ...passwords, confirm: e.target.value })}
                       required
@@ -272,7 +272,7 @@ export default function ProfilePage() {
 
                 <div className="pt-2">
                   <Button type="submit" variant="primary" loading={passLoading}>
-                    {settings.hasPassword ? "Update Password" : "Set Password"}
+                    {settings.hasPassword ? t("profile.security.updatePassword") : t("profile.security.setPassword")}
                   </Button>
                 </div>
               </form>
@@ -286,15 +286,13 @@ export default function ProfilePage() {
             <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500">
               <span className="material-symbols-outlined text-[20px]">route</span>
             </div>
-            <h3 className="text-lg font-semibold">Routing Strategy</h3>
+            <h3 className="text-lg font-semibold">{t("profile.routing.title")}</h3>
           </div>
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="font-medium">Round Robin</p>
-                <p className="text-sm text-text-muted">
-                  Cycle through accounts to distribute load
-                </p>
+                <p className="font-medium">{t("profile.routing.roundRobin")}</p>
+                <p className="text-sm text-text-muted">{t("profile.routing.roundRobinDesc")}</p>
               </div>
               <Toggle
                 checked={settings.fallbackStrategy === "round-robin"}
@@ -307,10 +305,8 @@ export default function ProfilePage() {
             {settings.fallbackStrategy === "round-robin" && (
               <div className="flex items-center justify-between pt-2 border-t border-border/50">
                 <div>
-                  <p className="font-medium">Sticky Limit</p>
-                  <p className="text-sm text-text-muted">
-                    Calls per account before switching
-                  </p>
+                  <p className="font-medium">{t("profile.routing.stickyLimit")}</p>
+                  <p className="text-sm text-text-muted">{t("profile.routing.stickyLimitDesc")}</p>
                 </div>
                 <Input
                   type="number"
@@ -326,8 +322,8 @@ export default function ProfilePage() {
 
             <p className="text-xs text-text-muted italic pt-2 border-t border-border/50">
               {settings.fallbackStrategy === "round-robin"
-                ? `Currently distributing requests across all available accounts with ${settings.stickyRoundRobinLimit || 3} calls per account.`
-                : "Currently using accounts in priority order (Fill First)."}
+                ? t("profile.routing.roundRobinStatus", { count: settings.stickyRoundRobinLimit || 3 })
+                : t("profile.routing.fillFirstStatus")}
             </p>
           </div>
         </Card>
@@ -338,15 +334,13 @@ export default function ProfilePage() {
             <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500">
               <span className="material-symbols-outlined text-[20px]">palette</span>
             </div>
-            <h3 className="text-lg font-semibold">Appearance</h3>
+            <h3 className="text-lg font-semibold">{t("profile.appearance.title")}</h3>
           </div>
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="font-medium">Dark Mode</p>
-                <p className="text-sm text-text-muted">
-                  Switch between light and dark themes
-                </p>
+                <p className="font-medium">{t("profile.appearance.darkMode")}</p>
+                <p className="text-sm text-text-muted">{t("profile.appearance.darkModeDesc")}</p>
               </div>
               <Toggle
                 checked={isDark}
@@ -372,7 +366,7 @@ export default function ProfilePage() {
                     <span className="material-symbols-outlined text-[20px]">
                       {option === "light" ? "light_mode" : option === "dark" ? "dark_mode" : "contrast"}
                     </span>
-                    <span className="capitalize">{option}</span>
+                    <span className="capitalize">{t(`profile.appearance.theme.${option}`)}</span>
                   </button>
                 ))}
               </div>
@@ -386,18 +380,18 @@ export default function ProfilePage() {
             <div className="p-2 rounded-lg bg-green-500/10 text-green-500">
               <span className="material-symbols-outlined text-[20px]">database</span>
             </div>
-            <h3 className="text-lg font-semibold">Data</h3>
+            <h3 className="text-lg font-semibold">{t("profile.data.title")}</h3>
           </div>
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between p-4 rounded-lg bg-bg border border-border">
               <div>
-                <p className="font-medium">Database Location</p>
+                <p className="font-medium">{t("profile.data.location")}</p>
                 <p className="text-sm text-text-muted font-mono">~/.9router/db.json</p>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <Button variant="secondary" icon="download" onClick={handleExportDb} loading={dbExporting}>
-                Export Database
+                {t("profile.data.export")}
               </Button>
               <input
                 ref={dbFileInputRef}
@@ -408,9 +402,9 @@ export default function ProfilePage() {
                 disabled={dbImporting}
               />
               <Button variant="outline" icon="upload" onClick={handleImportClick} disabled={dbImporting}>
-                Import Database
+                {t("profile.data.import")}
               </Button>
-              <span className="text-xs text-text-muted">Import replaces all local data.</span>
+              <span className="text-xs text-text-muted">{t("profile.data.importHint")}</span>
             </div>
             {dbStatus.message && (
               <p className={`text-sm ${dbStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
@@ -423,7 +417,7 @@ export default function ProfilePage() {
         {/* App Info */}
         <div className="text-center text-sm text-text-muted py-4">
           <p>{APP_CONFIG.name} v{APP_CONFIG.version}</p>
-          <p className="mt-1">Local Mode - All data stored on your machine</p>
+          <p className="mt-1">{t("profile.localMode.footer")}</p>
         </div>
       </div>
     </div>

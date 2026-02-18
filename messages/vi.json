@@ -203,6 +203,7 @@
   "providers": {
     "oauthTitle": "OAuth Providers",
     "apiKeyTitle": "API Key Providers",
+    "freeTitle": "Nhà cung cấp miễn phí",
     "addOpenAI": "Thêm OpenAI Compatible",
     "addAnthropic": "Thêm Anthropic Compatible",
     "openaiCompatible": "OpenAI Compatible",
@@ -211,6 +212,8 @@
     "apiTypeResponses": "Responses",
     "apiTypeMessages": "Messages",
     "apiTypeChatCompletions": "Chat Completions",
+    "openaiCompatibleDetails": "Chi tiết OpenAI Compatible",
+    "anthropicCompatibleDetails": "Chi tiết Anthropic Compatible",
     "apiTypeResponsesApi": "Responses API",
     "connected": "{count} kết nối",
     "error": "{count} lỗi",
@@ -257,6 +260,9 @@
       "apiTypeMessages": "Messages API",
       "apiTypeResponses": "Responses API",
       "apiTypeChatCompletions": "Chat Completions",
+      "endpointMessages": "messages",
+      "endpointResponses": "responses",
+      "endpointChatCompletions": "chat/completions",
       "deleteCompatibleConfirm": "Xóa node {type} này?",
       "oneConnectionLimit": "Mỗi compatible node chỉ cho phép một kết nối. Thêm node khác nếu cần nhiều kết nối.",
       "connectionsTitle": "Kết nối",
@@ -370,15 +376,23 @@
       "apply": "Áp dụng",
       "reset": "Reset",
       "manualConfig": "Cấu hình thủ công",
+      "resetToDefault": "Khôi phục mặc định",
       "howToInstall": "Cách cài",
       "hide": "Ẩn"
     },
     "fields": {
+      "current": "Hiện tại",
       "baseUrl": "Base URL",
       "baseUrlPlaceholder": "https://...",
+      "baseUrlPlaceholderV1": "https://.../v1",
       "apiKey": "API Key",
       "model": "Model",
       "modelPlaceholder": "provider/model-id"
+    },
+    "status": {
+      "connected": "Đã kết nối",
+      "notConfigured": "Chưa cấu hình",
+      "other": "Khác"
     },
     "tools": {
       "claude": {
@@ -510,8 +524,50 @@
       },
       "selectModelTitle": "Chọn model cho Codex",
       "manualConfigTitle": "Codex CLI - Cấu hình thủ công",
-      "manualConfigHeader": "Cấu hình 9Router cho Codex CLI"
-    }
+       "manualConfigHeader": "Cấu hình 9Router cho Codex CLI",
+       "openclaw": {
+         "status": {
+           "checking": "Đang kiểm tra Open Claw CLI..."
+         },
+         "install": {
+           "title": "Chưa cài Open Claw CLI",
+           "subtitle": "Vui lòng cài Open Claw CLI để dùng tính năng này."
+         },
+         "messages": {
+           "applySuccess": "Áp dụng cấu hình thành công!",
+           "applyFailed": "Áp dụng cấu hình thất bại",
+           "resetSuccess": "Đã khôi phục cấu hình!",
+           "resetFailed": "Khôi phục cấu hình thất bại"
+         },
+         "selectModelTitle": "Chọn model cho Open Claw",
+         "manualConfigTitle": "Open Claw - Cấu hình thủ công",
+         "placeholders": {
+           "apiKey": "<API_KEY_FROM_DASHBOARD>",
+           "model": "provider/model-id"
+         }
+       },
+       "droid": {
+         "status": {
+           "checking": "Đang kiểm tra Factory Droid CLI..."
+         },
+         "install": {
+           "title": "Chưa cài Factory Droid CLI",
+           "subtitle": "Vui lòng cài Factory Droid CLI để dùng tính năng này."
+         },
+         "messages": {
+           "applySuccess": "Áp dụng cấu hình thành công!",
+           "applyFailed": "Áp dụng cấu hình thất bại",
+           "resetSuccess": "Đã khôi phục cấu hình!",
+           "resetFailed": "Khôi phục cấu hình thất bại"
+         },
+         "selectModelTitle": "Chọn model cho Factory Droid",
+         "manualConfigTitle": "Factory Droid - Cấu hình thủ công",
+         "placeholders": {
+           "apiKey": "<API_KEY_FROM_DASHBOARD>",
+           "model": "provider/model-id"
+         }
+       }
+     }
   },
   "modelSelect": {
     "title": "Chọn model",
@@ -674,5 +730,222 @@
     "addModel": "Thêm model",
     "saving": "Đang lưu...",
     "addModelTitle": "Thêm model vào combo"
+  }
+  ,
+  "profile": {
+    "common": {
+      "genericError": "Đã xảy ra lỗi"
+    },
+    "localMode": {
+      "title": "Chế độ Local",
+      "subtitle": "Đang chạy trên máy của bạn",
+      "desc": "Tất cả dữ liệu được lưu cục bộ trong",
+      "descSuffix": "tệp.",
+      "footer": "Chế độ Local - Mọi dữ liệu lưu trên máy của bạn"
+    },
+    "security": {
+      "title": "Bảo mật",
+      "requireLogin": "Yêu cầu đăng nhập",
+      "requireLoginDesc": "Bật: dashboard yêu cầu mật khẩu. Tắt: truy cập không cần đăng nhập.",
+      "currentPassword": "Mật khẩu hiện tại",
+      "currentPasswordPlaceholder": "Nhập mật khẩu hiện tại",
+      "newPassword": "Mật khẩu mới",
+      "newPasswordPlaceholder": "Nhập mật khẩu mới",
+      "confirmPassword": "Xác nhận mật khẩu mới",
+      "confirmPasswordPlaceholder": "Nhập lại mật khẩu mới",
+      "updatePassword": "Cập nhật mật khẩu",
+      "setPassword": "Đặt mật khẩu",
+      "passwordMismatch": "Mật khẩu không khớp",
+      "passwordUpdated": "Đã cập nhật mật khẩu",
+      "passwordUpdateFailed": "Cập nhật mật khẩu thất bại"
+    },
+    "routing": {
+      "title": "Chiến lược định tuyến",
+      "roundRobin": "Round Robin",
+      "roundRobinDesc": "Luân phiên account để phân phối tải",
+      "stickyLimit": "Giới hạn Sticky",
+      "stickyLimitDesc": "Số lần gọi mỗi account trước khi đổi",
+      "roundRobinStatus": "Đang phân phối request qua các account với {count} lần gọi mỗi account.",
+      "fillFirstStatus": "Đang ưu tiên account theo thứ tự (Fill First)."
+    },
+    "appearance": {
+      "title": "Giao diện",
+      "darkMode": "Chế độ tối",
+      "darkModeDesc": "Chuyển đổi giữa sáng và tối",
+      "theme": {
+        "light": "sáng",
+        "dark": "tối",
+        "system": "hệ thống"
+      }
+    },
+    "data": {
+      "title": "Dữ liệu",
+      "location": "Vị trí database",
+      "export": "Xuất database",
+      "import": "Nhập database",
+      "importHint": "Nhập sẽ thay thế toàn bộ dữ liệu cục bộ.",
+      "exportSuccess": "Đã xuất database",
+      "exportFailed": "Xuất database thất bại",
+      "importSuccess": "Đã nhập database. Tải lại để áp dụng.",
+      "importFailed": "Nhập database thất bại",
+      "invalidJson": "File JSON không hợp lệ"
+    }
+  },
+  "translator": {
+    "title": "Translator Debug",
+    "subtitle": "Gỡ lỗi luồng dịch giữa các định dạng",
+    "providerLabel": "Provider",
+    "sendToProvider": "Gửi tới Provider",
+    "chars": "{count} ký tự",
+    "actions": {
+      "load": "Tải",
+      "lean": "Rút gọn",
+      "copy": "Copy",
+      "update": "Cập nhật",
+      "submit": "Gửi"
+    },
+    "steps": {
+      "clientRequest": "Yêu cầu client",
+      "sourceFormat": "Định dạng nguồn",
+      "openaiIntermediate": "Trung gian OpenAI",
+      "targetFormat": "Định dạng đích",
+      "providerResponse": "Phản hồi provider"
+    },
+    "providers": {
+      "antigravity": "Antigravity",
+      "geminiCli": "Gemini CLI",
+      "claude": "Claude",
+      "codex": "Codex",
+      "github": "GitHub",
+      "qwen": "Qwen",
+      "iflow": "iFlow AI",
+      "kiro": "Kiro AI",
+      "openai": "OpenAI",
+      "anthropic": "Anthropic",
+      "gemini": "Gemini",
+      "openrouter": "OpenRouter",
+      "glm": "GLM",
+      "kimi": "Kimi",
+      "minimax": "MiniMax"
+    },
+    "prompts": {
+      "accessToken": "Nhập access token (hoặc để trống):",
+      "apiKey": "Nhập API key (hoặc để trống):"
+    },
+    "messages": {
+      "requestSent": "Đã gửi! Trạng thái: {status} {statusText}",
+      "requestSentSuccess": "Gửi request tới provider thành công!",
+      "saved": "Đã lưu file",
+      "copied": "Đã copy vào clipboard!"
+    },
+    "errors": {
+      "step4Required": "Vui lòng tải hoặc tạo nội dung bước 4 trước",
+      "sendFailed": "Gửi request thất bại",
+      "sendError": "Lỗi gửi request: {message}",
+      "loadFailed": "Tải file thất bại",
+      "loadError": "Lỗi tải file: {message}",
+      "jsonParse": "Lỗi parse JSON: {message}",
+      "copy": "Lỗi copy: {message}",
+      "saveFailed": "Lưu file thất bại",
+      "saveError": "Lỗi lưu file: {message}",
+      "translateFailed": "Dịch thất bại",
+      "generic": "Lỗi: {message}"
+    }
+  },
+  "landing": {
+    "ctaTitle": "Sẵn sàng đơn giản hóa hạ tầng AI?",
+    "ctaSubtitle": "Tham gia cùng các dev đang tối ưu tích hợp AI với 9Router. Mã nguồn mở và miễn phí để bắt đầu.",
+    "ctaPrimary": "Bắt đầu miễn phí",
+    "ctaSecondary": "Đọc tài liệu",
+    "nav": {
+      "home": "Về trang chủ",
+      "features": "Tính năng",
+      "howItWorks": "Cách hoạt động",
+      "docs": "Tài liệu",
+      "github": "GitHub",
+      "getStarted": "Bắt đầu"
+    },
+    "hero": {
+      "badge": "v1.0 đã phát hành",
+      "titleLine1": "Một endpoint cho",
+      "titleLine2": "Mọi AI Provider",
+      "subtitle": "Proxy endpoint AI với dashboard - bản JavaScript của CLIProxyAPI. Hoạt động mượt với Claude Code, OpenAI Codex, Cline, RooCode và nhiều CLI tool khác.",
+      "primary": "Bắt đầu",
+      "secondary": "Xem trên GitHub"
+    },
+    "features": {
+      "title": "Tính năng nổi bật",
+      "subtitle": "Tất cả những gì bạn cần để quản lý hạ tầng AI ở một nơi, sẵn sàng cho scale.",
+      "items": {
+        "unified": { "title": "Endpoint hợp nhất", "desc": "Truy cập tất cả provider qua một URL API tiêu chuẩn." },
+        "setup": { "title": "Thiết lập nhanh", "desc": "Khởi chạy trong vài phút với lệnh npx." },
+        "fallback": { "title": "Fallback model", "desc": "Tự động chuyển provider khi lỗi hoặc độ trễ cao." },
+        "usage": { "title": "Theo dõi usage", "desc": "Phân tích chi tiết và theo dõi chi phí trên mọi model." },
+        "oauth": { "title": "OAuth & API Keys", "desc": "Quản lý credential an toàn trong một nơi." },
+        "cloud": { "title": "Cloud Sync", "desc": "Đồng bộ cấu hình giữa các thiết bị ngay lập tức." },
+        "cli": { "title": "Hỗ trợ CLI", "desc": "Dùng tốt với Claude Code, Codex, Cline, Cursor và nhiều hơn." },
+        "dashboard": { "title": "Dashboard", "desc": "Dashboard trực quan để theo dõi traffic realtime." }
+      }
+    },
+    "getStarted": {
+      "title": "Bắt đầu trong 30 giây",
+      "subtitle": "Cài 9Router, cấu hình provider qua dashboard và bắt đầu route request AI.",
+      "steps": {
+        "install": { "title": "Cài 9Router", "desc": "Chạy lệnh npx để khởi động server ngay" },
+        "dashboard": { "title": "Mở Dashboard", "desc": "Cấu hình provider và API key qua web" },
+        "route": { "title": "Route Request", "desc": "Trỏ CLI tool tới http://localhost:20128" }
+      },
+      "copy": "Copy",
+      "copied": "✓ Đã copy",
+      "terminal": {
+        "starting": "Đang khởi chạy 9Router...",
+        "server": "Server đang chạy tại",
+        "dashboard": "Dashboard:",
+        "ready": "Sẵn sàng route! ✓"
+      },
+      "note": "📝 Cấu hình provider trong dashboard hoặc dùng biến môi trường",
+      "terminalLabel": "terminal",
+      "dataLocation": "Vị trí dữ liệu:",
+      "platforms": {
+        "unix": "macOS/Linux",
+        "windows": "Windows"
+      }
+    },
+    "howItWorks": {
+      "title": "9Router hoạt động thế nào",
+      "subtitle": "Dữ liệu đi từ ứng dụng qua lớp định tuyến thông minh tới provider phù hợp nhất.",
+      "step1": { "title": "1. CLI & SDKs", "desc": "Request bắt đầu từ tool yêu thích hoặc SDK chung. Chỉ cần đổi base URL." },
+      "step2": { "title": "2. 9Router Hub", "desc": "Engine phân tích prompt, kiểm tra sức khỏe provider và route theo latency/chi phí thấp nhất." },
+      "step3": { "title": "3. AI Providers", "desc": "Request được xử lý bởi OpenAI, Anthropic, Gemini hoặc các provider khác ngay lập tức." }
+    },
+    "footer": {
+      "brandDesc": "Endpoint hợp nhất cho AI. Kết nối, định tuyến và quản lý provider dễ dàng.",
+      "product": "Sản phẩm",
+      "features": "Tính năng",
+      "dashboard": "Dashboard",
+      "changelog": "Changelog",
+      "resources": "Tài nguyên",
+      "documentation": "Tài liệu",
+      "github": "GitHub",
+      "npm": "NPM",
+      "legal": "Pháp lý",
+      "license": "Giấy phép MIT",
+      "copyright": "© {year} 9Router. Mọi quyền được bảo lưu."
+    },
+    "flow": {
+      "mobileHint": "Sơ đồ tương tác chỉ hiển thị trên desktop",
+      "cli": {
+        "claude": "Claude Code",
+        "codex": "OpenAI Codex",
+        "cline": "Cline",
+        "cursor": "Cursor"
+      },
+      "providers": {
+        "openai": "OpenAI",
+        "anthropic": "Anthropic",
+        "gemini": "Gemini",
+        "github": "GitHub Copilot"
+      }
+    }
   }
 }

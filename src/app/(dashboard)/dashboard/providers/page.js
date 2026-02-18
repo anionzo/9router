@@ -166,7 +166,7 @@ export default function ProvidersPage() {
 
       {/* Free Providers */}
       <div className="flex flex-col gap-4">
-        <h2 className="text-xl font-semibold">Free Providers</h2>
+        <h2 className="text-xl font-semibold">{t("providers.freeTitle")}</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {Object.entries(FREE_PROVIDERS).map(([key, info]) => (
             <ProviderCard

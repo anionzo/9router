@@ -391,10 +391,12 @@ export default function ProviderDetailPage() {
         <Card>
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-lg font-semibold">{isAnthropicCompatible ? "Anthropic Compatible Details" : "OpenAI Compatible Details"}</h2>
+              <h2 className="text-lg font-semibold">
+                {isAnthropicCompatible ? t("providers.anthropicCompatibleDetails") : t("providers.openaiCompatibleDetails")}
+              </h2>
               <p className="text-sm text-text-muted">
                 {isAnthropicCompatible ? t("providers.messages.apiTypeMessages") : (providerNode.apiType === "responses" ? t("providers.messages.apiTypeResponses") : t("providers.messages.apiTypeChatCompletions"))} · {(providerNode.baseUrl || "").replace(/\/$/, "")}/
-                {isAnthropicCompatible ? "messages" : (providerNode.apiType === "responses" ? "responses" : "chat/completions")}
+                {isAnthropicCompatible ? t("providers.messages.endpointMessages") : (providerNode.apiType === "responses" ? t("providers.messages.endpointResponses") : t("providers.messages.endpointChatCompletions"))}
               </p>
             </div>
             <div className="flex items-center gap-2">

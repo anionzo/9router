@@ -203,6 +203,7 @@
   "providers": {
     "oauthTitle": "OAuth Providers",
     "apiKeyTitle": "API Key Providers",
+    "freeTitle": "Free Providers",
     "addOpenAI": "Add OpenAI Compatible",
     "addAnthropic": "Add Anthropic Compatible",
     "openaiCompatible": "OpenAI Compatible",
@@ -211,6 +212,8 @@
     "apiTypeResponses": "Responses",
     "apiTypeMessages": "Messages",
     "apiTypeChatCompletions": "Chat Completions",
+    "openaiCompatibleDetails": "OpenAI Compatible Details",
+    "anthropicCompatibleDetails": "Anthropic Compatible Details",
     "apiTypeResponsesApi": "Responses API",
     "connected": "{count} Connected",
     "error": "{count} Error",
@@ -257,6 +260,9 @@
       "apiTypeMessages": "Messages API",
       "apiTypeResponses": "Responses API",
       "apiTypeChatCompletions": "Chat Completions",
+      "endpointMessages": "messages",
+      "endpointResponses": "responses",
+      "endpointChatCompletions": "chat/completions",
       "deleteCompatibleConfirm": "Delete this {type} node?",
       "oneConnectionLimit": "Only one connection is allowed per compatible node. Add another node if you need more connections.",
       "connectionsTitle": "Connections",
@@ -370,15 +376,23 @@
       "apply": "Apply",
       "reset": "Reset",
       "manualConfig": "Manual Config",
+      "resetToDefault": "Reset to default",
       "howToInstall": "How to Install",
       "hide": "Hide"
     },
     "fields": {
+      "current": "Current",
       "baseUrl": "Base URL",
       "baseUrlPlaceholder": "https://...",
+      "baseUrlPlaceholderV1": "https://.../v1",
       "apiKey": "API Key",
       "model": "Model",
       "modelPlaceholder": "provider/model-id"
+    },
+    "status": {
+      "connected": "Connected",
+      "notConfigured": "Not configured",
+      "other": "Other"
     },
     "tools": {
       "claude": {
@@ -511,6 +525,48 @@
       "selectModelTitle": "Select Model for Codex",
       "manualConfigTitle": "Codex CLI - Manual Configuration",
       "manualConfigHeader": "9Router Configuration for Codex CLI"
+    },
+    "openclaw": {
+      "status": {
+        "checking": "Checking Open Claw CLI..."
+      },
+      "install": {
+        "title": "Open Claw CLI not installed",
+        "subtitle": "Please install Open Claw CLI to use this feature."
+      },
+      "messages": {
+        "applySuccess": "Settings applied successfully!",
+        "applyFailed": "Failed to apply settings",
+        "resetSuccess": "Settings reset successfully!",
+        "resetFailed": "Failed to reset settings"
+      },
+      "selectModelTitle": "Select Model for Open Claw",
+      "manualConfigTitle": "Open Claw - Manual Configuration",
+      "placeholders": {
+        "apiKey": "<API_KEY_FROM_DASHBOARD>",
+        "model": "provider/model-id"
+      }
+    },
+    "droid": {
+      "status": {
+        "checking": "Checking Factory Droid CLI..."
+      },
+      "install": {
+        "title": "Factory Droid CLI not installed",
+        "subtitle": "Please install Factory Droid CLI to use this feature."
+      },
+      "messages": {
+        "applySuccess": "Settings applied successfully!",
+        "applyFailed": "Failed to apply settings",
+        "resetSuccess": "Settings reset successfully!",
+        "resetFailed": "Failed to reset settings"
+      },
+      "selectModelTitle": "Select Model for Factory Droid",
+      "manualConfigTitle": "Factory Droid - Manual Configuration",
+      "placeholders": {
+        "apiKey": "<API_KEY_FROM_DASHBOARD>",
+        "model": "provider/model-id"
+      }
     }
   },
   "modelSelect": {
@@ -677,5 +733,222 @@
     "addModel": "Add Model",
     "saving": "Saving...",
     "addModelTitle": "Add Model to Combo"
+  }
+  ,
+  "profile": {
+    "common": {
+      "genericError": "An error occurred"
+    },
+    "localMode": {
+      "title": "Local Mode",
+      "subtitle": "Running on your machine",
+      "desc": "All data is stored locally in the",
+      "descSuffix": "file.",
+      "footer": "Local Mode - All data stored on your machine"
+    },
+    "security": {
+      "title": "Security",
+      "requireLogin": "Require login",
+      "requireLoginDesc": "When ON, dashboard requires password. When OFF, access without login.",
+      "currentPassword": "Current Password",
+      "currentPasswordPlaceholder": "Enter current password",
+      "newPassword": "New Password",
+      "newPasswordPlaceholder": "Enter new password",
+      "confirmPassword": "Confirm New Password",
+      "confirmPasswordPlaceholder": "Confirm new password",
+      "updatePassword": "Update Password",
+      "setPassword": "Set Password",
+      "passwordMismatch": "Passwords do not match",
+      "passwordUpdated": "Password updated successfully",
+      "passwordUpdateFailed": "Failed to update password"
+    },
+    "routing": {
+      "title": "Routing Strategy",
+      "roundRobin": "Round Robin",
+      "roundRobinDesc": "Cycle through accounts to distribute load",
+      "stickyLimit": "Sticky Limit",
+      "stickyLimitDesc": "Calls per account before switching",
+      "roundRobinStatus": "Currently distributing requests across all available accounts with {count} calls per account.",
+      "fillFirstStatus": "Currently using accounts in priority order (Fill First)."
+    },
+    "appearance": {
+      "title": "Appearance",
+      "darkMode": "Dark Mode",
+      "darkModeDesc": "Switch between light and dark themes",
+      "theme": {
+        "light": "light",
+        "dark": "dark",
+        "system": "system"
+      }
+    },
+    "data": {
+      "title": "Data",
+      "location": "Database Location",
+      "export": "Export Database",
+      "import": "Import Database",
+      "importHint": "Import replaces all local data.",
+      "exportSuccess": "Database exported",
+      "exportFailed": "Failed to export database",
+      "importSuccess": "Database imported. Reload to apply.",
+      "importFailed": "Failed to import database",
+      "invalidJson": "Invalid JSON file"
+    }
+  },
+  "translator": {
+    "title": "Translator Debug",
+    "subtitle": "Debug translation flow between formats",
+    "providerLabel": "Provider",
+    "sendToProvider": "Send to Provider",
+    "chars": "{count} chars",
+    "actions": {
+      "load": "Load",
+      "lean": "Lean",
+      "copy": "Copy",
+      "update": "Update",
+      "submit": "Submit"
+    },
+    "steps": {
+      "clientRequest": "Client Request",
+      "sourceFormat": "Source Format",
+      "openaiIntermediate": "OpenAI Intermediate",
+      "targetFormat": "Target Format",
+      "providerResponse": "Provider Response"
+    },
+    "providers": {
+      "antigravity": "Antigravity",
+      "geminiCli": "Gemini CLI",
+      "claude": "Claude",
+      "codex": "Codex",
+      "github": "GitHub",
+      "qwen": "Qwen",
+      "iflow": "iFlow AI",
+      "kiro": "Kiro AI",
+      "openai": "OpenAI",
+      "anthropic": "Anthropic",
+      "gemini": "Gemini",
+      "openrouter": "OpenRouter",
+      "glm": "GLM",
+      "kimi": "Kimi",
+      "minimax": "MiniMax"
+    },
+    "prompts": {
+      "accessToken": "Enter access token (or leave empty):",
+      "apiKey": "Enter API key (or leave empty):"
+    },
+    "messages": {
+      "requestSent": "Request sent! Status: {status} {statusText}",
+      "requestSentSuccess": "Request sent to provider successfully!",
+      "saved": "File saved successfully",
+      "copied": "Copied to clipboard!"
+    },
+    "errors": {
+      "step4Required": "Please load or generate step 4 content first",
+      "sendFailed": "Failed to send request",
+      "sendError": "Error sending request: {message}",
+      "loadFailed": "Failed to load file",
+      "loadError": "Error loading file: {message}",
+      "jsonParse": "Error parsing JSON: {message}",
+      "copy": "Error copying: {message}",
+      "saveFailed": "Failed to save file",
+      "saveError": "Error saving file: {message}",
+      "translateFailed": "Translation failed",
+      "generic": "Error: {message}"
+    }
+  },
+  "landing": {
+    "ctaTitle": "Ready to Simplify Your AI Infrastructure?",
+    "ctaSubtitle": "Join developers who are streamlining their AI integrations with 9Router. Open source and free to start.",
+    "ctaPrimary": "Start Free",
+    "ctaSecondary": "Read Documentation",
+    "nav": {
+      "home": "Navigate to home",
+      "features": "Features",
+      "howItWorks": "How it Works",
+      "docs": "Docs",
+      "github": "GitHub",
+      "getStarted": "Get Started"
+    },
+    "hero": {
+      "badge": "v1.0 is now live",
+      "titleLine1": "One Endpoint for",
+      "titleLine2": "All AI Providers",
+      "subtitle": "AI endpoint proxy with web dashboard - A JavaScript port of CLIProxyAPI. Works seamlessly with Claude Code, OpenAI Codex, Cline, RooCode, and other CLI tools.",
+      "primary": "Get Started",
+      "secondary": "View on GitHub"
+    },
+    "features": {
+      "title": "Powerful Features",
+      "subtitle": "Everything you need to manage your AI infrastructure in one place, built for scale.",
+      "items": {
+        "unified": { "title": "Unified Endpoint", "desc": "Access all providers via a single standard API URL." },
+        "setup": { "title": "Easy Setup", "desc": "Get up and running in minutes with npx command." },
+        "fallback": { "title": "Model Fallback", "desc": "Automatically switch providers on failure or high latency." },
+        "usage": { "title": "Usage Tracking", "desc": "Detailed analytics and cost monitoring across all models." },
+        "oauth": { "title": "OAuth & API Keys", "desc": "Securely manage credentials in one vault." },
+        "cloud": { "title": "Cloud Sync", "desc": "Sync your configurations across devices instantly." },
+        "cli": { "title": "CLI Support", "desc": "Works with Claude Code, Codex, Cline, Cursor, and more." },
+        "dashboard": { "title": "Dashboard", "desc": "Visual dashboard for real-time traffic analysis." }
+      }
+    },
+    "getStarted": {
+      "title": "Get Started in 30 Seconds",
+      "subtitle": "Install 9Router, configure your providers via web dashboard, and start routing AI requests.",
+      "steps": {
+        "install": { "title": "Install 9Router", "desc": "Run npx command to start the server instantly" },
+        "dashboard": { "title": "Open Dashboard", "desc": "Configure providers and API keys via web interface" },
+        "route": { "title": "Route Requests", "desc": "Point your CLI tools to http://localhost:20128" }
+      },
+      "copy": "Copy",
+      "copied": "✓ Copied",
+      "terminal": {
+        "starting": "Starting 9Router...",
+        "server": "Server running on",
+        "dashboard": "Dashboard:",
+        "ready": "Ready to route! ✓"
+      },
+      "note": "📝 Configure providers in dashboard or use environment variables",
+      "terminalLabel": "terminal",
+      "dataLocation": "Data Location:",
+      "platforms": {
+        "unix": "macOS/Linux",
+        "windows": "Windows"
+      }
+    },
+    "howItWorks": {
+      "title": "How 9Router Works",
+      "subtitle": "Data flows seamlessly from your application through our intelligent routing layer to the best provider for the job.",
+      "step1": { "title": "1. CLI & SDKs", "desc": "Your requests start from your favorite tools or our unified SDK. Just change the base URL." },
+      "step2": { "title": "2. 9Router Hub", "desc": "Our engine analyzes the prompt, checks provider health, and routes for lowest latency or cost." },
+      "step3": { "title": "3. AI Providers", "desc": "The request is fulfilled by OpenAI, Anthropic, Gemini, or others instantly." }
+    },
+    "footer": {
+      "brandDesc": "The unified endpoint for AI generation. Connect, route, and manage your AI providers with ease.",
+      "product": "Product",
+      "features": "Features",
+      "dashboard": "Dashboard",
+      "changelog": "Changelog",
+      "resources": "Resources",
+      "documentation": "Documentation",
+      "github": "GitHub",
+      "npm": "NPM",
+      "legal": "Legal",
+      "license": "MIT License",
+      "copyright": "© {year} 9Router. All rights reserved."
+    },
+    "flow": {
+      "mobileHint": "Interactive diagram visible on desktop",
+      "cli": {
+        "claude": "Claude Code",
+        "codex": "OpenAI Codex",
+        "cline": "Cline",
+        "cursor": "Cursor"
+      },
+      "providers": {
+        "openai": "OpenAI",
+        "anthropic": "Anthropic",
+        "gemini": "Gemini",
+        "github": "GitHub Copilot"
+      }
+    }
   }
 }
