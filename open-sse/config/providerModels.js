@@ -6,6 +6,7 @@ export const PROVIDER_MODELS = {
   // OAuth Providers (using alias)
   cc: [  // Claude Code
     { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
+    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
     { id: "claude-opus-4-5-20251101", name: "Claude 4.5 Opus" },
     { id: "claude-sonnet-4-5-20250929", name: "Claude 4.5 Sonnet" },
     { id: "claude-haiku-4-5-20251001", name: "Claude 4.5 Haiku" },
@@ -17,6 +18,7 @@ export const PROVIDER_MODELS = {
     { id: "gpt-5.3-codex-high", name: "GPT 5.3 Codex (High)" },
     { id: "gpt-5.3-codex-low", name: "GPT 5.3 Codex (Low)" },
     { id: "gpt-5.3-codex-none", name: "GPT 5.3 Codex (None)" },
+    { id: "gpt-5.3-codex-spark", name: "GPT 5.3 Codex Spark" },
     // Mini - medium and high only
     { id: "gpt-5.1-codex-mini", name: "GPT 5.1 Codex Mini" },
     { id: "gpt-5.1-codex-mini-high", name: "GPT 5.1 Codex Mini (High)" },
