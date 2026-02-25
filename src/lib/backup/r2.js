@@ -3,6 +3,7 @@ import {
   PutObjectCommand,
   ListObjectsV2Command,
   GetObjectCommand,
+  DeleteObjectCommand,
   DeleteObjectsCommand,
 } from "@aws-sdk/client-s3";
 
@@ -48,6 +49,14 @@ function getClient(config) {
 function buildBackupKey(prefix) {
   const timestamp = new Date().toISOString().replace(/[.:]/g, "-");
   return `${prefix}db-backup-${timestamp}.enc.json`;
+}
+
+function normalizeBackupKey(key, prefix) {
+  const safeKey = String(key || "").trim();
+  if (!safeKey) {
+    throw new Error("Backup key is required");
+  }
+  return safeKey.startsWith(prefix) ? safeKey : `${prefix}${safeKey}`;
 }
 
 async function streamToBuffer(stream) {
@@ -131,12 +140,7 @@ export async function listEncryptedBackups() {
 export async function downloadEncryptedBackup(key) {
   const config = getConfig();
   const client = getClient(config);
-  const safeKey = String(key || "").trim();
-  if (!safeKey) {
-    throw new Error("Backup key is required");
-  }
-
-  const backupKey = safeKey.startsWith(config.prefix) ? safeKey : `${config.prefix}${safeKey}`;
+  const backupKey = normalizeBackupKey(key, config.prefix);
   const response = await client.send(
     new GetObjectCommand({
       Bucket: config.bucket,
@@ -150,4 +154,19 @@ export async function downloadEncryptedBackup(key) {
 
   const buffer = await streamToBuffer(response.Body);
   return { key: backupKey, buffer };
+}
+
+export async function deleteEncryptedBackup(key) {
+  const config = getConfig();
+  const client = getClient(config);
+  const backupKey = normalizeBackupKey(key, config.prefix);
+
+  await client.send(
+    new DeleteObjectCommand({
+      Bucket: config.bucket,
+      Key: backupKey,
+    })
+  );
+
+  return { key: backupKey };
 }

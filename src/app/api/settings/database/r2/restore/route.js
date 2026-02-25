@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
-import { exportDb, importDb } from "@/lib/localDb";
-import { decryptBackupPayload, encryptBackupPayload } from "@/lib/backup/crypto";
-import { downloadEncryptedBackup, uploadEncryptedBackup } from "@/lib/backup/r2";
+import { restoreFromEncryptedR2Backup } from "@/lib/backup/service";
 
 export async function POST(request) {
   try {
@@ -11,13 +9,7 @@ export async function POST(request) {
       return NextResponse.json({ error: "Backup key is required" }, { status: 400 });
     }
 
-    const beforeRestore = await exportDb();
-    const beforeEncrypted = encryptBackupPayload(beforeRestore);
-    await uploadEncryptedBackup(beforeEncrypted);
-
-    const { buffer } = await downloadEncryptedBackup(key);
-    const payload = decryptBackupPayload(buffer);
-    await importDb(payload);
+    await restoreFromEncryptedR2Backup(key);
 
     return NextResponse.json({ success: true });
   } catch (error) {

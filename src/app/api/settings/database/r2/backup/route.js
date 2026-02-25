@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
-import { exportDb } from "@/lib/localDb";
-import { encryptBackupPayload } from "@/lib/backup/crypto";
-import { uploadEncryptedBackup } from "@/lib/backup/r2";
+import { createEncryptedR2Backup, updateAutoBackupRunStatus } from "@/lib/backup/service";
 
 export async function POST() {
+  const startedAt = new Date().toISOString();
   try {
-    const payload = await exportDb();
-    const encrypted = encryptBackupPayload(payload);
-    const result = await uploadEncryptedBackup(encrypted);
+    const result = await createEncryptedR2Backup();
+    await updateAutoBackupRunStatus({
+      startedAt,
+      success: true,
+      key: result.key,
+    });
 
     return NextResponse.json({
       success: true,
@@ -15,6 +17,11 @@ export async function POST() {
       retention: result.retention,
     });
   } catch (error) {
+    await updateAutoBackupRunStatus({
+      startedAt,
+      success: false,
+      error: error?.message || "Failed to create encrypted backup",
+    });
     console.log("Error creating R2 database backup:", error);
     return NextResponse.json(
       { error: error?.message || "Failed to create encrypted backup" },
