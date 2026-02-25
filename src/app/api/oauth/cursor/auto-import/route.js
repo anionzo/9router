@@ -1,8 +1,88 @@
 import { NextResponse } from "next/server";
+import { access, constants } from "fs/promises";
 import { homedir } from "os";
 import { join } from "path";
 
 export const runtime = "nodejs";
+
+const ACCESS_TOKEN_KEYS = ["cursorAuth/accessToken", "cursorAuth/token"];
+const MACHINE_ID_KEYS = ["storage.serviceMachineId", "storage.machineId", "telemetry.machineId"];
+
+/** Get candidate db paths by platform */
+function getCandidatePaths(platform) {
+  const home = homedir();
+
+  if (platform === "darwin") {
+    return [
+      join(home, "Library/Application Support/Cursor/User/globalStorage/state.vscdb"),
+      join(home, "Library/Application Support/Cursor - Insiders/User/globalStorage/state.vscdb"),
+    ];
+  }
+
+  if (platform === "win32") {
+    const appData = process.env.APPDATA || join(home, "AppData", "Roaming");
+    const localAppData = process.env.LOCALAPPDATA || join(home, "AppData", "Local");
+    return [
+      join(appData, "Cursor", "User", "globalStorage", "state.vscdb"),
+      join(appData, "Cursor - Insiders", "User", "globalStorage", "state.vscdb"),
+      join(localAppData, "Cursor", "User", "globalStorage", "state.vscdb"),
+      join(localAppData, "Programs", "Cursor", "User", "globalStorage", "state.vscdb"),
+    ];
+  }
+
+  // Linux
+  return [
+    join(home, ".config/Cursor/User/globalStorage/state.vscdb"),
+    join(home, ".config/cursor/User/globalStorage/state.vscdb"),
+  ];
+}
+
+/** Extract tokens from open db, with fuzzy fallback */
+function extractTokens(db, platform) {
+  const desiredKeys = [...ACCESS_TOKEN_KEYS, ...MACHINE_ID_KEYS];
+  const rows = db.prepare(
+    `SELECT key, value FROM itemTable WHERE key IN (${desiredKeys.map(() => "?").join(",")})`
+  ).all(...desiredKeys);
+
+  const normalize = (value) => {
+    if (typeof value !== "string") return value;
+    try {
+      const parsed = JSON.parse(value);
+      return typeof parsed === "string" ? parsed : value;
+    } catch {
+      return value;
+    }
+  };
+
+  const tokens = {};
+  for (const row of rows) {
+    if (ACCESS_TOKEN_KEYS.includes(row.key) && !tokens.accessToken) {
+      tokens.accessToken = normalize(row.value);
+    } else if (MACHINE_ID_KEYS.includes(row.key) && !tokens.machineId) {
+      tokens.machineId = normalize(row.value);
+    }
+  }
+
+  // Fuzzy fallback for all platforms when exact keys miss
+  if (!tokens.accessToken || !tokens.machineId) {
+    const fallbackRows = db.prepare(
+      "SELECT key, value FROM itemTable WHERE key LIKE '%cursorAuth/%' OR key LIKE '%machineId%' OR key LIKE '%serviceMachineId%'"
+    ).all();
+
+    for (const row of fallbackRows) {
+      const key = row.key || "";
+      const value = normalize(row.value);
+      if (!tokens.accessToken && key.toLowerCase().includes("accesstoken")) {
+        tokens.accessToken = value;
+      }
+      if (!tokens.machineId && key.toLowerCase().includes("machineid")) {
+        tokens.machineId = value;
+      }
+    }
+  }
+
+  return tokens;
+}
 
 /**
  * GET /api/oauth/cursor/auto-import
@@ -23,51 +103,41 @@ export async function GET() {
     }
 
     const platform = process.platform;
-    let dbPath;
+    const candidates = getCandidatePaths(platform);
 
-    // Determine database path based on platform
-    if (platform === "darwin") {
-      dbPath = join(homedir(), "Library/Application Support/Cursor/User/globalStorage/state.vscdb");
-    } else if (platform === "linux") {
-      dbPath = join(homedir(), ".config/Cursor/User/globalStorage/state.vscdb");
-    } else if (platform === "win32") {
-      dbPath = join(process.env.APPDATA || "", "Cursor/User/globalStorage/state.vscdb");
-    } else {
-      return NextResponse.json(
-        { error: "Unsupported platform", found: false },
-        { status: 400 }
-      );
+    // Find first readable db path
+    let dbPath = null;
+    for (const candidate of candidates) {
+      try {
+        await access(candidate, constants.R_OK);
+        dbPath = candidate;
+        break;
+      } catch {
+        // Try next candidate
+      }
     }
 
-    // Try to open database
+    if (!dbPath) {
+      return NextResponse.json({
+        found: false,
+        error: `Cursor database not found. Checked locations:\n${candidates.join("\n")}\n\nMake sure Cursor IDE is installed and opened at least once.`,
+      });
+    }
+
     let db;
     try {
       db = new Database(dbPath, { readonly: true, fileMustExist: true });
     } catch (error) {
       return NextResponse.json({
         found: false,
-        error: "Cursor database not found. Make sure Cursor IDE is installed and you are logged in.",
+        error: `Found Cursor database at:\n${dbPath}\n\nBut could not open it: ${error.message}`,
       });
     }
 
     try {
-      // Extract tokens from database
-      const rows = db.prepare(
-        "SELECT key, value FROM itemTable WHERE key IN (?, ?)"
-      ).all("cursorAuth/accessToken", "storage.serviceMachineId");
-
-      const tokens = {};
-      for (const row of rows) {
-        if (row.key === "cursorAuth/accessToken") {
-          tokens.accessToken = row.value;
-        } else if (row.key === "storage.serviceMachineId") {
-          tokens.machineId = row.value;
-        }
-      }
-
+      const tokens = extractTokens(db, platform);
       db.close();
 
-      // Validate tokens exist
       if (!tokens.accessToken || !tokens.machineId) {
         return NextResponse.json({
           found: false,

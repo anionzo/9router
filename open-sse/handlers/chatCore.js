@@ -194,23 +194,23 @@ function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
 function extractUsageFromResponse(responseBody, provider) {
   if (!responseBody || typeof responseBody !== 'object') return null;
 
-  // OpenAI format
-  if (responseBody.usage && typeof responseBody.usage === 'object') {
-    return {
-      prompt_tokens: responseBody.usage.prompt_tokens || 0,
-      completion_tokens: responseBody.usage.completion_tokens || 0,
-      cached_tokens: responseBody.usage.prompt_tokens_details?.cached_tokens,
-      reasoning_tokens: responseBody.usage.completion_tokens_details?.reasoning_tokens
-    };
-  }
-
-  // Claude format
-  if (responseBody.usage && typeof responseBody.usage === 'object' && (responseBody.usage.input_tokens !== undefined || responseBody.usage.output_tokens !== undefined)) {
+  // Claude format - check first to avoid conflict with OpenAI check
+  if (responseBody.usage && typeof responseBody.usage === 'object' && responseBody.usage.input_tokens !== undefined) {
     return {
       prompt_tokens: responseBody.usage.input_tokens || 0,
       completion_tokens: responseBody.usage.output_tokens || 0,
       cache_read_input_tokens: responseBody.usage.cache_read_input_tokens,
       cache_creation_input_tokens: responseBody.usage.cache_creation_input_tokens
+    };
+  }
+
+  // OpenAI format
+  if (responseBody.usage && typeof responseBody.usage === 'object' && responseBody.usage.prompt_tokens !== undefined) {
+    return {
+      prompt_tokens: responseBody.usage.prompt_tokens || 0,
+      completion_tokens: responseBody.usage.completion_tokens || 0,
+      cached_tokens: responseBody.usage.prompt_tokens_details?.cached_tokens,
+      reasoning_tokens: responseBody.usage.completion_tokens_details?.reasoning_tokens
     };
   }
 
@@ -367,7 +367,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const targetFormat = modelTargetFormat || getTargetFormat(provider);
 
   // Track if client actually wants streaming (before we force it for providers)
-  const clientRequestedStreaming = body.stream === true;
+  const clientRequestedStreaming = body.stream === true || sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI;
   const providerRequiresStreaming = provider === 'openai' || provider === 'codex';
 
   // Force streaming for OpenAI/Codex models (they don't support non-streaming mode properly)
@@ -411,6 +411,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   appendRequestLog({ model, provider, connectionId, status: "PENDING" }).catch(() => { });
 
   const msgCount = translatedBody.messages?.length
+    || translatedBody.input?.length
     || translatedBody.contents?.length
     || translatedBody.request?.contents?.length
     || 0;
@@ -457,7 +458,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
 
   } catch (error) {
-    trackPendingRequest(model, provider, connectionId, false);
+    trackPendingRequest(model, provider, connectionId, false, true);
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
 
     const errorDetail = {
@@ -532,7 +533,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Check provider response - return error info for fallback handling
   if (!providerResponse.ok) {
-    trackPendingRequest(model, provider, connectionId, false);
+    trackPendingRequest(model, provider, connectionId, false, true);
     const { statusCode, message, retryAfterMs } = await parseUpstreamError(providerResponse, provider);
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}` }).catch(() => { });
 
@@ -579,13 +580,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     // (Codex API doesn't always set Content-Type on streaming responses)
     const isSSEResponse = contentType.includes("text/event-stream") || (contentType === "" && provider === "codex");
     if (isSSEResponse) {
-      const isResponsesApi = sourceFormat === 'openai-responses';
+      // Codex always returns Responses API SSE format regardless of client source format
+      const isCodexResponsesApi = provider === "codex" || sourceFormat === "openai-responses";
 
-      if (isResponsesApi) {
-        // Responses API SSE → Responses API JSON (for pydantic_ai, OpenAI SDK, etc.)
+      if (isCodexResponsesApi) {
+        // Responses API SSE → parse → translate to client format
         try {
           const jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
-          log?.info?.("STREAM", `Converted Responses API SSE → JSON for non-streaming client`);
 
           if (onRequestSuccess) await onRequestSuccess();
 
@@ -606,6 +607,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
             }).catch(() => { });
           }
 
+          const msgItem = jsonResponse.output?.find(item => item.type === "message");
+          const textContent = msgItem?.content?.find(c => c.type === "output_text")?.text || msgItem?.content?.[0]?.text || null;
+          console.log(`[DBG] codex status=${jsonResponse.status} output.len=${jsonResponse.output?.length} msgItem.type=${msgItem?.type} textLen=${textContent?.length||0}`);
           const totalLatency = Date.now() - requestStartTime;
           saveRequestDetail({
             provider: provider || "unknown",
@@ -617,21 +621,67 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
             request: extractRequestConfig(body, stream),
             providerRequest: finalBody || translatedBody || null,
             providerResponse: null,
-            response: {
-              content: jsonResponse.output?.[0]?.content?.[0]?.text || null,
-              thinking: null,
-              finish_reason: jsonResponse.status || "unknown"
-            },
-            status: "success"
+            response: { content: textContent, thinking: null, finish_reason: jsonResponse.status || "unknown" },
+            status: "success",
+            endpoint: clientRawRequest?.endpoint || null
           }).catch(() => { });
+
+          // If client is openai-responses → return as-is
+          if (sourceFormat === "openai-responses") {
+            return {
+              success: true,
+              response: new Response(JSON.stringify(jsonResponse), {
+                headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+              })
+            };
+          }
+
+          // Translate Responses API JSON → OpenAI chat completion JSON
+          const openaiMsg = {
+            id: jsonResponse.id || `chatcmpl-${Date.now()}`,
+            object: "chat.completion",
+            created: jsonResponse.created_at || Math.floor(Date.now() / 1000),
+            model: jsonResponse.model || model,
+            choices: [{
+              index: 0,
+              message: { role: "assistant", content: textContent || "" },
+              finish_reason: jsonResponse.status === "completed" ? "stop" : (jsonResponse.status || "stop")
+            }],
+            usage: {
+              prompt_tokens: usage.input_tokens || 0,
+              completion_tokens: usage.output_tokens || 0,
+              total_tokens: (usage.input_tokens || 0) + (usage.output_tokens || 0)
+            }
+          };
+
+          // Build client-format response based on sourceFormat
+          let finalResp;
+          if (sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI) {
+            // Antigravity/Gemini non-streaming format
+            finalResp = {
+              response: {
+                candidates: [{
+                  content: { role: "model", parts: [{ text: textContent || "" }] },
+                  finishReason: "STOP",
+                  index: 0
+                }],
+                usageMetadata: {
+                  promptTokenCount: usage.input_tokens || 0,
+                  candidatesTokenCount: usage.output_tokens || 0,
+                  totalTokenCount: (usage.input_tokens || 0) + (usage.output_tokens || 0)
+                },
+                modelVersion: model,
+                responseId: jsonResponse.id || `resp_${Date.now()}`
+              }
+            };
+          } else {
+            finalResp = openaiMsg;
+          }
 
           return {
             success: true,
-            response: new Response(JSON.stringify(jsonResponse), {
-              headers: {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*"
-              }
+            response: new Response(JSON.stringify(finalResp), {
+              headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
             })
           };
         } catch (error) {
@@ -656,7 +706,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
                 tokens: usage,
                 timestamp: new Date().toISOString(),
                 connectionId: connectionId || undefined,
-                apiKey: apiKey || undefined
+                apiKey: apiKey || undefined,
+                endpoint: clientRawRequest?.endpoint || null
               }).catch(() => { });
             }
 
@@ -676,7 +727,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
                 thinking: parsed.choices?.[0]?.message?.reasoning_content || null,
                 finish_reason: parsed.choices?.[0]?.finish_reason || "unknown"
               },
-              status: "success"
+              status: "success",
+              endpoint: clientRawRequest?.endpoint || null
             }).catch(() => { });
 
             return {
@@ -723,6 +775,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       }
     }
 
+    // Log provider response (raw response from provider)
+    reqLogger.logProviderResponse(
+      providerResponse.status,
+      providerResponse.statusText,
+      providerResponse.headers,
+      responseBody
+    );
+
     // Notify success - caller can clear error status if needed
     if (onRequestSuccess) {
       await onRequestSuccess();
@@ -741,7 +801,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         tokens: usage,
         timestamp: new Date().toISOString(),
         connectionId: connectionId || undefined,
-        apiKey: apiKey || undefined
+        apiKey: apiKey || undefined,
+        endpoint: clientRawRequest?.endpoint || null
       }).catch(err => {
         console.error("Failed to save usage stats:", err.message);
       });
@@ -752,11 +813,30 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
       : responseBody;
 
+    // Ensure OpenAI-required fields are present (needed for Letta and other strict clients)
+    if (!translatedResponse.object) translatedResponse.object = "chat.completion";
+    if (!translatedResponse.created) translatedResponse.created = Math.floor(Date.now() / 1000);
+
+    // Strip Azure-specific non-standard fields
+    if (translatedResponse.prompt_filter_results !== undefined) {
+      delete translatedResponse.prompt_filter_results;
+    }
+    if (translatedResponse?.choices) {
+      for (const choice of translatedResponse.choices) {
+        if (choice.content_filter_results !== undefined) {
+          delete choice.content_filter_results;
+        }
+      }
+    }
+
     // Add buffer and filter usage for client (to prevent CLI context errors)
     if (translatedResponse?.usage) {
       const buffered = addBufferToUsage(translatedResponse.usage);
       translatedResponse.usage = filterUsageForFormat(buffered, sourceFormat);
     }
+
+    // Log converted response (final response to client)
+    reqLogger.logConvertedResponse(translatedResponse);
 
     const totalLatency = Date.now() - requestStartTime;
     const requestDetail = {
@@ -781,7 +861,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
                   null,
         finish_reason: translatedResponse?.choices?.[0]?.finish_reason || "unknown"
       },
-      status: "success"
+      status: "success",
+      endpoint: clientRawRequest?.endpoint || null
     };
 
     // Async save (don't block response)
@@ -848,8 +929,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       console.error("[RequestDetail] Failed to update streaming content:", err.message);
     });
 
-    // Save usage stats for dashboard
-    if (usage && typeof usage === 'object') {
+    // Save usage stats for dashboard (skip if no real token data to avoid duplicates)
+    if (usage && typeof usage === 'object' && (usage.prompt_tokens > 0 || usage.completion_tokens > 0)) {
       const msg = `[${new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" })}] 📊 [STREAM USAGE] ${provider.toUpperCase()} | in=${usage?.prompt_tokens || 0} | out=${usage?.completion_tokens || 0}${connectionId ? ` | account=${connectionId.slice(0, 8)}...` : ""}`;
       console.log(`${COLORS.green}${msg}${COLORS.reset}`);
 
@@ -859,7 +940,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         tokens: usage,
         timestamp: new Date().toISOString(),
         connectionId: connectionId || undefined,
-        apiKey: apiKey || undefined
+        apiKey: apiKey || undefined,
+        endpoint: clientRawRequest?.endpoint || null
       }).catch(err => {
         console.error("Failed to save streaming usage stats:", err.message);
       });
@@ -873,8 +955,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     && !isDroidCLI;
 
   if (needsCodexTranslation) {
-    log?.debug?.("STREAM", `Codex translation mode: openai-responses → openai`);
-    transformStream = createSSETransformStreamWithLogger('openai-responses', 'openai', provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey);
+    // Translate Codex (openai-responses) SSE → client's source format
+    // Claude → claude, Antigravity/Gemini → antigravity, others → openai
+    let codexTarget;
+    if (sourceFormat === FORMATS.CLAUDE) codexTarget = FORMATS.CLAUDE;
+    else if (sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI) codexTarget = FORMATS.ANTIGRAVITY;
+    else codexTarget = FORMATS.OPENAI;
+    log?.debug?.("STREAM", `Codex translation mode: openai-responses → ${codexTarget}`);
+    transformStream = createSSETransformStreamWithLogger('openai-responses', codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey);
   } else if (needsTranslation(targetFormat, sourceFormat)) {
     log?.debug?.("STREAM", `Translation mode: ${targetFormat} → ${sourceFormat}`);
     transformStream = createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey);

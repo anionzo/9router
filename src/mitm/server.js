@@ -6,6 +6,7 @@ const { promisify } = require("util");
 const os = require("os");
 
 // Configuration
+const INTERNAL_REQUEST_HEADER = { name: "x-request-source", value: "local" };
 const TARGET_HOST = "daily-cloudcode-pa.googleapis.com";
 const LOCAL_PORT = 443;
 const ROUTER_URL = "http://localhost:20128/v1/chat/completions";
@@ -22,10 +23,16 @@ if (!API_KEY) {
 
 // Load SSL certificates
 const certDir = path.join(os.homedir(), ".9router", "mitm");
-const sslOptions = {
-  key: fs.readFileSync(path.join(certDir, "server.key")),
-  cert: fs.readFileSync(path.join(certDir, "server.crt"))
-};
+let sslOptions;
+try {
+  sslOptions = {
+    key: fs.readFileSync(path.join(certDir, "server.key")),
+    cert: fs.readFileSync(path.join(certDir, "server.crt"))
+  };
+} catch (e) {
+  console.error(`❌ SSL cert not found in ${certDir}: ${e.message}`);
+  process.exit(1);
+}
 
 // Chat endpoints that should be intercepted
 const CHAT_URL_PATTERNS = [":generateContent", ":streamGenerateContent"];
@@ -145,12 +152,10 @@ async function intercept(req, res, bodyBuffer, mappedModel) {
       throw new Error(`9Router ${response.status}: ${errText}`);
     }
 
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      "Connection": "keep-alive",
-      "X-Accel-Buffering": "no"
-    });
+    const ct = response.headers.get("content-type") || "application/json";
+    const resHeaders = { "Content-Type": ct, "Cache-Control": "no-cache", "Connection": "keep-alive" };
+    if (ct.includes("text/event-stream")) resHeaders["X-Accel-Buffering"] = "no";
+    res.writeHead(200, resHeaders);
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -168,13 +173,20 @@ async function intercept(req, res, bodyBuffer, mappedModel) {
 }
 
 const server = https.createServer(sslOptions, async (req, res) => {
+  // Health check endpoint for startup verification
+  if (req.url === "/_mitm_health") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true, pid: process.pid }));
+    return;
+  }
+
   const bodyBuffer = await collectBodyRaw(req);
 
   // Save request log if enabled
   if (bodyBuffer.length > 0) saveRequestLog(req.url, bodyBuffer);
 
   // Anti-loop: requests from 9Router bypass interception
-  if (req.headers["x-9router-source"] === "9router") {
+  if (req.headers[INTERNAL_REQUEST_HEADER.name] === INTERNAL_REQUEST_HEADER.value) {
     return passthrough(req, res, bodyBuffer);
   }
 
@@ -185,6 +197,7 @@ const server = https.createServer(sslOptions, async (req, res) => {
   }
 
   const model = extractModel(bodyBuffer);
+  console.log(`📡 ${model} (passthrough)`);
   const mappedModel = getMappedModel(model);
 
   if (!mappedModel) {

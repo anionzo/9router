@@ -1,6 +1,20 @@
 /**
  * OAuth Configuration Constants
  */
+import { platform, arch } from "os";
+
+/**
+ * Get the platform enum value based on the current OS.
+ * Matches Antigravity binary's ClientMetadata.Platform enum.
+ */
+function getOAuthPlatformEnum() {
+  const os = platform();
+  const architecture = arch();
+  if (os === "darwin") return architecture === "arm64" ? 2 : 1;
+  if (os === "linux") return architecture === "arm64" ? 4 : 3;
+  if (os === "win32") return 5;
+  return 0;
+}
 
 // Claude OAuth Configuration (Authorization Code Flow with PKCE)
 export const CLAUDE_CONFIG = {
@@ -83,8 +97,16 @@ export const ANTIGRAVITY_CONFIG = {
   onboardUserEndpoint: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
   loadCodeAssistUserAgent: "google-api-nodejs-client/9.15.1",
   loadCodeAssistApiClient: "google-cloud-sdk vscode_cloudshelleditor/0.1",
-  loadCodeAssistClientMetadata: `{"ideType":"IDE_UNSPECIFIED","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}`,
+  loadCodeAssistClientMetadata: JSON.stringify({ ideType: 9, platform: getOAuthPlatformEnum(), pluginType: 2 }),
 };
+
+/**
+ * Get client metadata using numeric enum values for API calls.
+ * @returns {{ ideType: number, platform: number, pluginType: number }}
+ */
+export function getOAuthClientMetadata() {
+  return { ideType: 9, platform: getOAuthPlatformEnum(), pluginType: 2 };
+}
 
 // OpenAI OAuth Configuration (Authorization Code Flow with PKCE)
 export const OPENAI_CONFIG = {
@@ -170,6 +192,29 @@ export const CURSOR_CONFIG = {
   },
 };
 
+// Kimi Coding OAuth Configuration (Device Code Flow)
+export const KIMI_CODING_CONFIG = {
+  clientId: process.env.KIMI_CODING_OAUTH_CLIENT_ID || "17e5f671-d194-4dfb-9706-5516cb48c098",
+  deviceCodeUrl: "https://auth.kimi.com/api/oauth/device_authorization",
+  tokenUrl: "https://auth.kimi.com/api/oauth/token",
+};
+
+// KiloCode OAuth Configuration (Custom Device Auth Flow)
+export const KILOCODE_CONFIG = {
+  apiBaseUrl: "https://api.kilo.ai",
+  initiateUrl: "https://api.kilo.ai/api/device-auth/codes",
+  pollUrlBase: "https://api.kilo.ai/api/device-auth/codes",
+};
+
+// Cline OAuth Configuration (Local Callback Flow via app.cline.bot)
+export const CLINE_CONFIG = {
+  appBaseUrl: "https://app.cline.bot",
+  apiBaseUrl: "https://api.cline.bot",
+  authorizeUrl: "https://api.cline.bot/api/v1/auth/authorize",
+  tokenExchangeUrl: "https://api.cline.bot/api/v1/auth/token",
+  refreshUrl: "https://api.cline.bot/api/v1/auth/refresh",
+};
+
 // OAuth timeout (5 minutes)
 export const OAUTH_TIMEOUT = 300000;
 
@@ -185,4 +230,7 @@ export const PROVIDERS = {
   GITHUB: "github",
   KIRO: "kiro",
   CURSOR: "cursor",
+  KIMI_CODING: "kimi-coding",
+  KILOCODE: "kilocode",
+  CLINE: "cline",
 };

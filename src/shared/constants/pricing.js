@@ -207,6 +207,13 @@ export const DEFAULT_PRICING = {
       cached: 0.75,
       reasoning: 9.00,
       cache_creation: 1.50
+    },
+    "coder-model": {
+      input: 1.50,
+      output: 6.00,
+      cached: 0.75,
+      reasoning: 9.00,
+      cache_creation: 1.50
     }
   },
 
@@ -300,14 +307,14 @@ export const DEFAULT_PRICING = {
 
   // Antigravity (ag) - User-provided pricing
   ag: {
-    "gemini-3-pro-low": {
+    "gemini-3.1-pro-low": {
       input: 2.00,
       output: 12.00,
       cached: 0.25,
       reasoning: 18.00,
       cache_creation: 2.00
     },
-    "gemini-3-pro-high": {
+    "gemini-3.1-pro-high": {
       input: 4.00,
       output: 18.00,
       cached: 0.50,
@@ -328,14 +335,7 @@ export const DEFAULT_PRICING = {
       reasoning: 3.75,
       cache_creation: 0.30
     },
-    "claude-sonnet-4-5": {
-      input: 3.00,
-      output: 15.00,
-      cached: 0.30,
-      reasoning: 22.50,
-      cache_creation: 3.00
-    },
-    "claude-sonnet-4-5-thinking": {
+    "claude-sonnet-4-6": {
       input: 3.00,
       output: 15.00,
       cached: 0.30,
@@ -355,6 +355,13 @@ export const DEFAULT_PRICING = {
       cached: 0.50,
       reasoning: 37.50,
       cache_creation: 5.00
+    },
+    "gpt-oss-120b-medium": {
+      input: 0.50,
+      output: 2.00,
+      cached: 0.25,
+      reasoning: 3.00,
+      cache_creation: 0.50
     }
   },
 
@@ -458,6 +465,13 @@ export const DEFAULT_PRICING = {
       reasoning: 30.00,
       cache_creation: 5.00
     },
+    "gpt-5.3-codex": {
+      input: 1.75,
+      output: 14.00,
+      cached: 0.175,
+      reasoning: 14.00,
+      cache_creation: 1.75
+    },
     "claude-haiku-4.5": {
       input: 0.50,
       output: 2.50,
@@ -487,6 +501,13 @@ export const DEFAULT_PRICING = {
       cache_creation: 3.00
     },
     "claude-sonnet-4.5": {
+      input: 3.00,
+      output: 15.00,
+      cached: 0.30,
+      reasoning: 22.50,
+      cache_creation: 3.00
+    },
+    "claude-sonnet-4.6": {
       input: 3.00,
       output: 15.00,
       cached: 0.30,

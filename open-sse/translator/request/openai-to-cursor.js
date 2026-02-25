@@ -1,97 +1,105 @@
 /**
  * OpenAI to Cursor Request Translator
- * Converts OpenAI messages to Cursor simple format
+ * - assistant tool_calls → kept as-is (Cursor generates tool calls)
+ * - Claude tool_use blocks → converted to OpenAI tool_calls format
+ * - tool results → converted to user message string
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 
-/**
- * Convert OpenAI messages to Cursor format with native tool_results support
- * - system → user with [System Instructions] prefix
- * - tool → accumulate into tool_results array for next user/assistant message
- * - assistant with tool_calls → keep tool_calls structure (Cursor supports it natively)
- */
+function extractContent(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.filter(p => p.type === "text").map(p => p.text).join("");
+  }
+  return "";
+}
+
+// Build a map of tool_use_id → tool_name from the previous assistant message
+function getToolNameMap(prevMsg) {
+  const map = {};
+  if (!prevMsg?.tool_calls) return map;
+  for (const tc of prevMsg.tool_calls) {
+    if (tc.id && tc.function?.name) map[tc.id] = tc.function.name;
+  }
+  return map;
+}
+
 function convertMessages(messages) {
   const result = [];
-  let pendingToolResults = [];
 
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
 
     if (msg.role === "system") {
-      result.push({
-        role: "user",
-        content: `[System Instructions]\n${msg.content}`
-      });
+      result.push({ role: "user", content: `[System Instructions]\n${msg.content}` });
+      continue;
+    }
+
+    if (msg.role === "user") {
+      if (Array.isArray(msg.content)) {
+        const parts = [];
+        const prevMsg = result[result.length - 1];
+        const nameMap = getToolNameMap(prevMsg);
+        for (const block of msg.content) {
+          if (block.type === "text") {
+            parts.push(block.text);
+          } else if (block.type === "tool_result") {
+            // Claude format: user message with tool_result blocks
+            const toolResultText = extractContent(block.content) || "";
+            const toolCallId = block.tool_use_id || "";
+            const toolName = nameMap[toolCallId] || "";
+            parts.push(`<tool_result>\n<tool_name>${toolName}</tool_name>\n<tool_call_id>${toolCallId}</tool_call_id>\n<result>${toolResultText}</result>\n</tool_result>`);
+          }
+        }
+        result.push({ role: "user", content: parts.join("\n") || "" });
+      } else {
+        result.push({ role: "user", content: extractContent(msg.content) || "" });
+      }
       continue;
     }
 
     if (msg.role === "tool") {
-      let toolContent = "";
-      if (typeof msg.content === "string") {
-        toolContent = msg.content;
-      } else if (Array.isArray(msg.content)) {
-        for (const part of msg.content) {
-          if (part.type === "text") {
-            toolContent += part.text;
-          }
-        }
-      }
-      
-      const toolName = msg.name || "tool";
+      // Strip system-reminder tags injected by Claude Code
+      const raw = extractContent(msg.content) || "";
+      const toolContent = raw.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
+      const prevMsg = result[result.length - 1];
+      const nameMap = getToolNameMap(prevMsg);
       const toolCallId = msg.tool_call_id || "";
-      
-      // Accumulate tool result
-      pendingToolResults.push({
-        tool_call_id: toolCallId,
-        name: toolName,
-        index: pendingToolResults.length,
-        raw_args: toolContent
+      const toolName = nameMap[toolCallId] || "";
+      result.push({
+        role: "user",
+        content: `<tool_result>\n<tool_name>${toolName}</tool_name>\n<tool_call_id>${toolCallId}</tool_call_id>\n<result>${toolContent}</result>\n</tool_result>`
       });
       continue;
     }
 
-    if (msg.role === "user" || msg.role === "assistant") {
-      let content = "";
+    if (msg.role === "assistant") {
+      let content = extractContent(msg.content) || "";
+      let tool_calls = null;
 
-      if (typeof msg.content === "string") {
-        content = msg.content;
+      if (msg.tool_calls && msg.tool_calls.length > 0) {
+        // OpenAI format: strip `index` field
+        tool_calls = msg.tool_calls.map(({ index, ...tc }) => tc);
       } else if (Array.isArray(msg.content)) {
-        for (const part of msg.content) {
-          if (part.type === "text") {
-            content += part.text;
-          }
-        }
+        // Claude format: extract tool_use blocks from content array
+        const extracted = msg.content
+          .filter(b => b.type === "tool_use")
+          .map(b => ({
+            id: b.id,
+            type: "function",
+            function: {
+              name: b.name,
+              arguments: JSON.stringify(b.input || {})
+            }
+          }));
+        if (extracted.length > 0) tool_calls = extracted;
       }
 
-      // Keep tool_calls structure for assistant messages
-      if (msg.role === "assistant" && msg.tool_calls && msg.tool_calls.length > 0) {
-        const assistantMsg = { role: "assistant" };
-        if (content) {
-          assistantMsg.content = content;
-        }
-        assistantMsg.tool_calls = msg.tool_calls;
-        
-        // Attach pending tool results to assistant message with tool_calls
-        if (pendingToolResults.length > 0) {
-          assistantMsg.tool_results = pendingToolResults;
-          pendingToolResults = [];
-        }
-        
-        result.push(assistantMsg);
-      } else if (content || pendingToolResults.length > 0) {
-        const msgObj = { 
-          role: msg.role, 
-          content: content || ""
-        };
-        
-        // Attach pending tool results to this message
-        if (pendingToolResults.length > 0) {
-          msgObj.tool_results = pendingToolResults;
-          pendingToolResults = [];
-        }
-        
-        result.push(msgObj);
+      if (tool_calls) {
+        result.push({ role: "assistant", content, tool_calls });
+      } else if (content) {
+        result.push({ role: "assistant", content });
       }
     }
   }
@@ -99,16 +107,14 @@ function convertMessages(messages) {
   return result;
 }
 
-/**
- * Transform OpenAI request to Cursor format
- * Returns modified body with converted messages
- */
 export function buildCursorRequest(model, body, stream, credentials) {
   const messages = convertMessages(body.messages || []);
-  
+  // Strip fields irrelevant to Cursor (OpenAI/Anthropic-specific)
+  const { user, metadata, tool_choice, stream_options, system, ...rest } = body;
   return {
-    ...body,
-    messages
+    ...rest,
+    messages,
+    max_tokens: 32000
   };
 }
 
