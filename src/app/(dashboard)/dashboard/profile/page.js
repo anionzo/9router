@@ -6,6 +6,12 @@ import { useTheme } from "@/shared/hooks/useTheme";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
 
+const AUTO_BACKUP_INTERVAL_OPTIONS = [
+  { label: "6h", value: 360 },
+  { label: "12h", value: 720 },
+  { label: "24h", value: 1440 },
+];
+
 export default function ProfilePage() {
   const { theme, setTheme, isDark } = useTheme();
   const [settings, setSettings] = useState({ fallbackStrategy: "fill-first" });
@@ -17,9 +23,14 @@ export default function ProfilePage() {
   const [dbCloudStatus, setDbCloudStatus] = useState({ type: "", message: "" });
   const [cloudBackups, setCloudBackups] = useState([]);
   const [backupsLoading, setBackupsLoading] = useState(false);
+  const [showAllCloudBackups, setShowAllCloudBackups] = useState(false);
+  const [schedulerUpdating, setSchedulerUpdating] = useState(false);
+  const [schedulerRunningNow, setSchedulerRunningNow] = useState(false);
   const [dbLoading, setDbLoading] = useState(false);
   const [dbStatus, setDbStatus] = useState({ type: "", message: "" });
   const importFileRef = useRef(null);
+
+  const formatDateTime = (value) => (value ? new Date(value).toLocaleString() : "Never");
 
   useEffect(() => {
     fetch("/api/settings")
@@ -44,7 +55,11 @@ export default function ProfilePage() {
       if (!res.ok) {
         throw new Error(data.error || "Failed to load cloud backups");
       }
-      setCloudBackups(Array.isArray(data.backups) ? data.backups : []);
+      const nextBackups = Array.isArray(data.backups) ? data.backups : [];
+      setCloudBackups(nextBackups);
+      if (nextBackups.length <= 3) {
+        setShowAllCloudBackups(false);
+      }
     } catch (err) {
       setDbCloudStatus({ type: "error", message: err.message || "Failed to load cloud backups" });
     } finally {
@@ -102,6 +117,92 @@ export default function ProfilePage() {
       setDbCloudStatus({ type: "error", message: err.message || "Failed to restore backup" });
     } finally {
       setDbCloudLoading(false);
+    }
+  };
+
+  const deleteCloudBackup = async (key) => {
+    const confirmed = window.confirm("Delete this cloud backup permanently?");
+    if (!confirmed) return;
+
+    setDbCloudLoading(true);
+    setDbCloudStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/settings/database/r2/backups", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to delete backup");
+      }
+
+      setDbCloudStatus({ type: "success", message: "Cloud backup deleted" });
+      await loadCloudBackups();
+    } catch (err) {
+      setDbCloudStatus({ type: "error", message: err.message || "Failed to delete backup" });
+    } finally {
+      setDbCloudLoading(false);
+    }
+  };
+
+  const updateAutoBackupScheduler = async (updates = {}) => {
+    setSchedulerUpdating(true);
+    setDbCloudStatus({ type: "", message: "" });
+    try {
+      const nextEnabled = updates.enabled !== undefined
+        ? updates.enabled
+        : settings.r2AutoBackupEnabled === true;
+      const nextInterval = updates.intervalMinutes || settings.r2AutoBackupIntervalMinutes || 360;
+
+      const res = await fetch("/api/settings/database/r2/scheduler", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: nextEnabled, intervalMinutes: nextInterval }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to update auto backup settings");
+      }
+
+      setSettings((prev) => ({
+        ...prev,
+        r2AutoBackupEnabled: data.enabled,
+        r2AutoBackupIntervalMinutes: data.intervalMinutes,
+        r2AutoBackupLastRunAt: data.lastRunAt,
+        r2AutoBackupLastSuccessAt: data.lastSuccessAt,
+        r2AutoBackupLastError: data.lastError,
+        r2AutoBackupLastKey: data.lastKey,
+      }));
+      setDbCloudStatus({ type: "success", message: "Auto backup settings updated" });
+    } catch (err) {
+      setDbCloudStatus({ type: "error", message: err.message || "Failed to update auto backup settings" });
+    } finally {
+      setSchedulerUpdating(false);
+    }
+  };
+
+  const runAutoBackupNow = async () => {
+    setSchedulerRunningNow(true);
+    setDbCloudStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/settings/database/r2/scheduler", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "run-now" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to run backup now");
+      }
+
+      setDbCloudStatus({ type: "success", message: "Auto backup run completed" });
+      await reloadSettings();
+      await loadCloudBackups();
+    } catch (err) {
+      setDbCloudStatus({ type: "error", message: err.message || "Failed to run backup now" });
+    } finally {
+      setSchedulerRunningNow(false);
     }
   };
 
@@ -532,6 +633,60 @@ export default function ProfilePage() {
               </Button>
             </div>
 
+            <div className="p-4 rounded-lg bg-bg border border-border flex flex-col gap-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-medium">Auto Backup Scheduler</p>
+                  <p className="text-sm text-text-muted">Automatically backup to R2 every 6h/12h/24h</p>
+                </div>
+                <Toggle
+                  checked={settings.r2AutoBackupEnabled === true}
+                  onChange={(enabled) => updateAutoBackupScheduler({ enabled })}
+                  disabled={loading || schedulerUpdating || schedulerRunningNow}
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <p className="text-sm text-text-muted">Backup Interval</p>
+                <div className="inline-flex p-1 rounded-lg bg-black/5 dark:bg-white/5">
+                  {AUTO_BACKUP_INTERVAL_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => updateAutoBackupScheduler({ intervalMinutes: option.value })}
+                      disabled={schedulerUpdating || schedulerRunningNow}
+                      className={cn(
+                        "px-3 py-1.5 rounded-md text-sm font-medium transition-all",
+                        Number(settings.r2AutoBackupIntervalMinutes || 360) === option.value
+                          ? "bg-white dark:bg-white/10 text-text-main shadow-sm"
+                          : "text-text-muted hover:text-text-main"
+                      )}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 flex-wrap text-sm">
+                <p className="text-text-muted">Last successful auto backup: {formatDateTime(settings.r2AutoBackupLastSuccessAt)}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  icon="play_arrow"
+                  onClick={runAutoBackupNow}
+                  loading={schedulerRunningNow}
+                  disabled={dbCloudLoading || schedulerUpdating}
+                >
+                  Run Now
+                </Button>
+              </div>
+
+              {settings.r2AutoBackupLastError && (
+                <p className="text-sm text-red-500">Last auto backup error: {settings.r2AutoBackupLastError}</p>
+              )}
+            </div>
+
             <div className="p-4 rounded-lg bg-bg border border-border flex flex-col gap-3">
               <div className="flex items-center justify-between">
                 <p className="font-medium">Cloud Backups</p>
@@ -552,7 +707,7 @@ export default function ProfilePage() {
                 <p className="text-sm text-text-muted">No cloud backups yet.</p>
               ) : (
                 <div className="flex flex-col gap-2">
-                  {cloudBackups.slice(0, 10).map((backup) => (
+                  {(showAllCloudBackups ? cloudBackups : cloudBackups.slice(0, 3)).map((backup) => (
                     <div
                       key={backup.key}
                       className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border/70"
@@ -565,17 +720,44 @@ export default function ProfilePage() {
                           {Math.max(1, Math.round((backup.size || 0) / 1024))} KB
                         </p>
                       </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          icon="restore"
+                          onClick={() => restoreFromCloud(backup.key)}
+                          disabled={dbCloudLoading || schedulerRunningNow}
+                        >
+                          Restore
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          icon="delete"
+                          onClick={() => deleteCloudBackup(backup.key)}
+                          disabled={dbCloudLoading || schedulerRunningNow}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {cloudBackups.length > 3 && (
+                    <div className="pt-1">
                       <Button
                         variant="outline"
                         size="sm"
-                        icon="restore"
-                        onClick={() => restoreFromCloud(backup.key)}
-                        disabled={dbCloudLoading}
+                        icon={showAllCloudBackups ? "expand_less" : "expand_more"}
+                        onClick={() => setShowAllCloudBackups((prev) => !prev)}
+                        disabled={dbCloudLoading || schedulerRunningNow}
                       >
-                        Restore
+                        {showAllCloudBackups
+                          ? "Show Less"
+                          : `Show More (${cloudBackups.length - 3})`}
                       </Button>
                     </div>
-                  ))}
+                  )}
                 </div>
               )}
             </div>

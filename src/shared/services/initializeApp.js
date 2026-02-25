@@ -2,6 +2,7 @@ import { cleanupProviderConnections, getSettings, updateSettings, getApiKeys } f
 import { enableTunnel } from "@/lib/tunnel/tunnelManager";
 import { killCloudflared, isCloudflaredRunning, ensureCloudflared } from "@/lib/tunnel/cloudflared";
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks } from "@/mitm/manager";
+import { getR2BackupScheduler } from "@/shared/services/r2BackupScheduler";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { existsSync } from "fs";
@@ -86,6 +87,10 @@ export async function initializeApp() {
 
     // Auto-start MITM if it was enabled before restart
     autoStartMitm();
+
+    // Start auto backup scheduler (it will no-op when disabled)
+    const backupScheduler = getR2BackupScheduler();
+    backupScheduler.start();
   } catch (error) {
     console.error("[InitApp] Error:", error);
   }
