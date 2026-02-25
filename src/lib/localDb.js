@@ -47,11 +47,18 @@ const defaultData = {
   mitmAlias: {},
   combos: [],
   apiKeys: [],
+  apiKeyPolicies: {},
   settings: {
     cloudEnabled: false,
     tunnelEnabled: false,
     tunnelUrl: "",
     stickyRoundRobinLimit: 3,
+    r2AutoBackupEnabled: false,
+    r2AutoBackupIntervalMinutes: 360,
+    r2AutoBackupLastRunAt: null,
+    r2AutoBackupLastSuccessAt: null,
+    r2AutoBackupLastError: null,
+    r2AutoBackupLastKey: null,
     requireLogin: true,
     observabilityEnabled: true,
     observabilityMaxRecords: 1000,
@@ -70,11 +77,18 @@ function cloneDefaultData() {
     mitmAlias: {},
     combos: [],
     apiKeys: [],
+    apiKeyPolicies: {},
     settings: {
       cloudEnabled: false,
-    tunnelEnabled: false,
-    tunnelUrl: "",
+      tunnelEnabled: false,
+      tunnelUrl: "",
       stickyRoundRobinLimit: 3,
+      r2AutoBackupEnabled: false,
+      r2AutoBackupIntervalMinutes: 360,
+      r2AutoBackupLastRunAt: null,
+      r2AutoBackupLastSuccessAt: null,
+      r2AutoBackupLastError: null,
+      r2AutoBackupLastKey: null,
       requireLogin: true,
       observabilityEnabled: true,
       observabilityMaxRecords: 1000,
@@ -630,6 +644,14 @@ export async function getApiKeys() {
 }
 
 /**
+ * Get API key by key value
+ */
+export async function getApiKeyByValue(keyValue) {
+  const db = await getDb();
+  return db.data.apiKeys.find((k) => k.key === keyValue) || null;
+}
+
+/**
  * Generate short random key (8 chars)
  */
 function generateShortKey() {
@@ -683,6 +705,9 @@ export async function deleteApiKey(id) {
   if (index === -1) return false;
   
   db.data.apiKeys.splice(index, 1);
+  if (db.data.apiKeyPolicies && db.data.apiKeyPolicies[id]) {
+    delete db.data.apiKeyPolicies[id];
+  }
   await db.write();
   
   return true;
@@ -718,6 +743,47 @@ export async function validateApiKey(key) {
   const db = await getDb();
   const found = db.data.apiKeys.find(k => k.key === key);
   return found && found.isActive !== false;
+}
+
+/**
+ * Get API key policy by key ID
+ */
+export async function getApiKeyPolicy(keyId) {
+  const db = await getDb();
+  const policies = db.data.apiKeyPolicies || {};
+  return policies[keyId] || null;
+}
+
+/**
+ * Upsert API key policy
+ */
+export async function setApiKeyPolicy(keyId, policy) {
+  const db = await getDb();
+  if (!db.data.apiKeyPolicies || typeof db.data.apiKeyPolicies !== "object") {
+    db.data.apiKeyPolicies = {};
+  }
+  db.data.apiKeyPolicies[keyId] = {
+    ...policy,
+    updatedAt: new Date().toISOString(),
+  };
+  await db.write();
+  return db.data.apiKeyPolicies[keyId];
+}
+
+/**
+ * Delete API key policy
+ */
+export async function deleteApiKeyPolicy(keyId) {
+  const db = await getDb();
+  if (!db.data.apiKeyPolicies || typeof db.data.apiKeyPolicies !== "object") {
+    return false;
+  }
+  if (!db.data.apiKeyPolicies[keyId]) {
+    return false;
+  }
+  delete db.data.apiKeyPolicies[keyId];
+  await db.write();
+  return true;
 }
 
 // ============ Data Cleanup ============
@@ -777,6 +843,41 @@ export async function updateSettings(updates) {
   };
   await db.write();
   return db.data.settings;
+}
+
+/**
+ * Export full database payload
+ */
+export async function exportDb() {
+  const db = await getDb();
+  return db.data || cloneDefaultData();
+}
+
+/**
+ * Import full database payload
+ */
+export async function importDb(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("Invalid database payload");
+  }
+
+  const nextData = {
+    ...cloneDefaultData(),
+    ...payload,
+    settings: {
+      ...cloneDefaultData().settings,
+      ...(payload.settings && typeof payload.settings === "object" && !Array.isArray(payload.settings)
+        ? payload.settings
+        : {}),
+    },
+  };
+
+  const { data: normalized } = ensureDbShape(nextData);
+  const db = await getDb();
+  db.data = normalized;
+  await db.write();
+
+  return db.data;
 }
 
 /**

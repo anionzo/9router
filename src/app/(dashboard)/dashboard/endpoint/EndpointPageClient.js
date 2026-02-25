@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import PropTypes from "prop-types";
 import { Card, Button, Input, Modal, CardSkeleton, Toggle } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX } from "@/shared/constants/providers";
 
 /* ========== CLOUD CODE — COMMENTED OUT (replaced by Tunnel) ==========
 const DEFAULT_CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL || "";
@@ -15,6 +16,16 @@ const TUNNEL_BENEFITS = [
   { icon: "group", title: "Share Endpoint", desc: "Share URL with team members" },
   { icon: "code", title: "Use in Cursor/Cline", desc: "Connect AI tools remotely" },
   { icon: "lock", title: "Encrypted", desc: "End-to-end TLS via Cloudflare" },
+];
+
+const POLICY_PATH_OPTIONS = [
+  "/v1/chat/completions",
+  "/v1/messages",
+  "/v1/messages/count_tokens",
+  "/v1/responses",
+  "/v1/embeddings",
+  "/v1/models",
+  "/v1/api/chat",
 ];
 
 const TUNNEL_ACTION_TIMEOUT_MS = 90000;
@@ -50,6 +61,75 @@ export default function APIPageClient({ machineId }) {
   const [tunnelStatus, setTunnelStatus] = useState(null);
   const [showDisableModal, setShowDisableModal] = useState(false);
   const [showEnableModal, setShowEnableModal] = useState(false);
+  const [policyKeyId, setPolicyKeyId] = useState("");
+  const [policyLoading, setPolicyLoading] = useState(false);
+  const [policySaving, setPolicySaving] = useState(false);
+  const [policyStatus, setPolicyStatus] = useState(null);
+  const [availableModelOptions, setAvailableModelOptions] = useState([]);
+  const [availablePrefixOptions, setAvailablePrefixOptions] = useState([]);
+  const [modelSearch, setModelSearch] = useState("");
+  const [customPrefixInput, setCustomPrefixInput] = useState("");
+  const [customModelInput, setCustomModelInput] = useState("");
+  const [policyForm, setPolicyForm] = useState({
+    expiresAt: "",
+    allowedPrefixes: [],
+    allowedModels: [],
+    allowedPaths: [],
+  });
+
+  const toLocalDateTime = (isoValue) => {
+    if (!isoValue) return "";
+    const date = new Date(isoValue);
+    if (Number.isNaN(date.getTime())) return "";
+    const tzOffset = date.getTimezoneOffset() * 60000;
+    return new Date(date.getTime() - tzOffset).toISOString().slice(0, 16);
+  };
+
+  const normalizeArrayField = (value) => {
+    if (Array.isArray(value)) {
+      return value.map((item) => String(item || "").trim()).filter(Boolean);
+    }
+    if (typeof value === "string") {
+      return value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+    return [];
+  };
+
+  const resetPolicyForm = () => {
+    setPolicyForm({
+      expiresAt: "",
+      allowedPrefixes: [],
+      allowedModels: [],
+      allowedPaths: [],
+    });
+    setCustomPrefixInput("");
+    setCustomModelInput("");
+  };
+
+  const normalizePrefixValue = (value) => {
+    const text = String(value || "").trim().replace(/^\/+|\/+$/g, "");
+    if (!text) return "";
+    return `${text}/`;
+  };
+
+  const normalizeModelValue = (value) => String(value || "").trim();
+
+  const filteredModelOptions = useMemo(() => {
+    const merged = Array.from(new Set([...(availableModelOptions || []), ...(policyForm.allowedModels || [])]));
+    const keyword = modelSearch.trim().toLowerCase();
+    const base = keyword
+      ? merged.filter((model) => model.toLowerCase().includes(keyword))
+      : merged;
+    return base.slice(0, 80);
+  }, [availableModelOptions, modelSearch, policyForm.allowedModels]);
+
+  const mergedPrefixOptions = useMemo(
+    () => Array.from(new Set([...(availablePrefixOptions || []), ...(policyForm.allowedPrefixes || [])])).sort((a, b) => a.localeCompare(b)),
+    [availablePrefixOptions, policyForm.allowedPrefixes]
+  );
 
   const { copied, copy } = useCopyToClipboard();
 
@@ -57,6 +137,26 @@ export default function APIPageClient({ machineId }) {
     fetchData();
     loadSettings();
   }, []);
+
+  useEffect(() => {
+    if (!policyKeyId && keys.length > 0) {
+      setPolicyKeyId(keys[0].id);
+      loadPolicy(keys[0].id);
+    }
+    if (policyKeyId && !keys.some((key) => key.id === policyKeyId)) {
+      const nextId = keys[0]?.id || "";
+      setPolicyKeyId(nextId);
+      if (nextId) {
+        loadPolicy(nextId);
+      } else {
+        resetPolicyForm();
+      }
+    }
+    if (keys.length === 0) {
+      setPolicyKeyId("");
+      resetPolicyForm();
+    }
+  }, [keys]);
 
   /* ========== CLOUD FUNCTIONS — COMMENTED OUT (replaced by Tunnel) ==========
   const postCloudAction = async (action, timeoutMs = CLOUD_ACTION_TIMEOUT_MS) => {
@@ -246,16 +346,316 @@ export default function APIPageClient({ machineId }) {
 
   const fetchData = async () => {
     try {
-      const keysRes = await fetch("/api/keys");
+      const [keysRes, modelsRes, nodesRes, providersRes] = await Promise.all([
+        fetch("/api/keys"),
+        fetch("/api/v1/models"),
+        fetch("/api/provider-nodes"),
+        fetch("/api/providers"),
+      ]);
+
       const keysData = await keysRes.json();
       if (keysRes.ok) {
         setKeys(keysData.keys || []);
       }
+
+      let allModelIds = [];
+
+      const modelsData = await modelsRes.json().catch(() => ({}));
+      if (modelsRes.ok && Array.isArray(modelsData.data)) {
+        const models = modelsData.data
+          .map((item) => String(item?.id || "").trim())
+          .filter(Boolean)
+          .sort((a, b) => a.localeCompare(b));
+
+        allModelIds = models;
+      }
+
+      const providersData = await providersRes.json().catch(() => ({}));
+      if (providersRes.ok && Array.isArray(providersData.connections)) {
+        const compatibleConnections = providersData.connections.filter((conn) => {
+          const providerId = String(conn?.provider || "");
+          return (
+            conn?.authType === "apikey" &&
+            conn?.isActive !== false &&
+            (providerId.startsWith(OPENAI_COMPATIBLE_PREFIX) || providerId.startsWith(ANTHROPIC_COMPATIBLE_PREFIX))
+          );
+        });
+
+        if (compatibleConnections.length > 0) {
+          const dynamicResults = await Promise.allSettled(
+            compatibleConnections.map(async (conn) => {
+              const response = await fetch(`/api/providers/${conn.id}/models`);
+              if (!response.ok) {
+                return { conn, models: [] };
+              }
+              const data = await response.json().catch(() => ({}));
+              return { conn, models: Array.isArray(data.models) ? data.models : [] };
+            })
+          );
+
+          const dynamicModelIds = [];
+          for (const result of dynamicResults) {
+            if (result.status !== "fulfilled") continue;
+
+            const { conn, models } = result.value;
+            const prefix = String(conn?.providerSpecificData?.prefix || "")
+              .trim()
+              .replace(/\/+$/, "");
+
+            for (const model of models) {
+              const rawId = String(model?.id || model?.model || model?.name || "").trim();
+              if (!rawId) continue;
+
+              if (!prefix) {
+                dynamicModelIds.push(rawId);
+                continue;
+              }
+
+              if (rawId.startsWith(`${prefix}/`)) {
+                dynamicModelIds.push(rawId);
+              } else {
+                dynamicModelIds.push(`${prefix}/${rawId.replace(/^\/+/, "")}`);
+              }
+            }
+          }
+
+          if (dynamicModelIds.length > 0) {
+            allModelIds = Array.from(new Set([...allModelIds, ...dynamicModelIds])).sort((a, b) =>
+              a.localeCompare(b)
+            );
+          }
+        }
+      }
+
+      if (allModelIds.length > 0) {
+        setAvailableModelOptions(allModelIds);
+      } else {
+        setAvailableModelOptions([]);
+      }
+
+      const modelPrefixes = Array.from(
+        new Set(
+          allModelIds
+            .filter((id) => id.includes("/"))
+            .map((id) => `${id.split("/")[0]}/`)
+        )
+      ).sort((a, b) => a.localeCompare(b));
+
+      let nodePrefixes = [];
+      const nodesData = await nodesRes.json().catch(() => ({}));
+      if (nodesRes.ok && Array.isArray(nodesData.nodes)) {
+        nodePrefixes = nodesData.nodes
+          .map((node) => normalizePrefixValue(node?.prefix))
+          .filter(Boolean);
+      }
+
+      const mergedPrefixes = Array.from(new Set([...modelPrefixes, ...nodePrefixes])).sort((a, b) =>
+        a.localeCompare(b)
+      );
+      setAvailablePrefixOptions(mergedPrefixes);
     } catch (error) {
       console.log("Error fetching data:", error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadPolicy = async (keyId) => {
+    if (!keyId) {
+      resetPolicyForm();
+      return;
+    }
+
+    setPolicyLoading(true);
+    setPolicyStatus(null);
+    try {
+      const res = await fetch(`/api/keys/${keyId}/policy`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to load key policy");
+      }
+
+      const policy = data.policy;
+      if (!policy) {
+        resetPolicyForm();
+        return;
+      }
+
+      setPolicyForm({
+        expiresAt: toLocalDateTime(policy.expiresAt),
+        allowedPrefixes: normalizeArrayField(policy.allowedPrefixes),
+        allowedModels: normalizeArrayField(policy.allowedModels),
+        allowedPaths: Array.isArray(policy.allowedPaths) ? policy.allowedPaths : [],
+      });
+    } catch (error) {
+      setPolicyStatus({ type: "error", message: error.message || "Failed to load key policy" });
+    } finally {
+      setPolicyLoading(false);
+    }
+  };
+
+  const savePolicy = async () => {
+    if (!policyKeyId) return;
+
+    setPolicySaving(true);
+    setPolicyStatus(null);
+    try {
+      const payload = {
+        expiresAt: policyForm.expiresAt ? new Date(policyForm.expiresAt).toISOString() : null,
+        allowedPaths: policyForm.allowedPaths,
+        allowedPrefixes: normalizeArrayField(policyForm.allowedPrefixes),
+        allowedModels: normalizeArrayField(policyForm.allowedModels),
+      };
+
+      const res = await fetch(`/api/keys/${policyKeyId}/policy`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to save key policy");
+      }
+
+      setPolicyStatus({ type: "success", message: "Key policy saved" });
+      await loadPolicy(policyKeyId);
+    } catch (error) {
+      setPolicyStatus({ type: "error", message: error.message || "Failed to save key policy" });
+    } finally {
+      setPolicySaving(false);
+    }
+  };
+
+  const clearPolicy = async () => {
+    if (!policyKeyId) return;
+
+    const confirmed = confirm("Clear policy for this key? It will return to full access.");
+    if (!confirmed) return;
+
+    setPolicySaving(true);
+    setPolicyStatus(null);
+    try {
+      const res = await fetch(`/api/keys/${policyKeyId}/policy`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to clear key policy");
+      }
+
+      resetPolicyForm();
+      setPolicyStatus({ type: "success", message: "Key policy cleared" });
+    } catch (error) {
+      setPolicyStatus({ type: "error", message: error.message || "Failed to clear key policy" });
+    } finally {
+      setPolicySaving(false);
+    }
+  };
+
+  const togglePolicyPath = (path) => {
+    setPolicyForm((prev) => {
+      const exists = prev.allowedPaths.includes(path);
+      return {
+        ...prev,
+        allowedPaths: exists
+          ? prev.allowedPaths.filter((item) => item !== path)
+          : [...prev.allowedPaths, path],
+      };
+    });
+  };
+
+  const selectAllPaths = () => {
+    setPolicyForm((prev) => ({
+      ...prev,
+      allowedPaths: [...POLICY_PATH_OPTIONS],
+    }));
+  };
+
+  const clearAllPaths = () => {
+    setPolicyForm((prev) => ({
+      ...prev,
+      allowedPaths: [],
+    }));
+  };
+
+  const togglePolicyPrefix = (prefix) => {
+    setPolicyForm((prev) => {
+      const exists = prev.allowedPrefixes.includes(prefix);
+      return {
+        ...prev,
+        allowedPrefixes: exists
+          ? prev.allowedPrefixes.filter((item) => item !== prefix)
+          : [...prev.allowedPrefixes, prefix],
+      };
+    });
+  };
+
+  const togglePolicyModel = (model) => {
+    setPolicyForm((prev) => {
+      const exists = prev.allowedModels.includes(model);
+      return {
+        ...prev,
+        allowedModels: exists
+          ? prev.allowedModels.filter((item) => item !== model)
+          : [...prev.allowedModels, model],
+      };
+    });
+  };
+
+  const selectAllPrefixes = () => {
+    setPolicyForm((prev) => ({
+      ...prev,
+      allowedPrefixes: [...mergedPrefixOptions],
+    }));
+  };
+
+  const clearAllPrefixes = () => {
+    setPolicyForm((prev) => ({
+      ...prev,
+      allowedPrefixes: [],
+    }));
+  };
+
+  const addCustomPrefix = () => {
+    const normalized = normalizePrefixValue(customPrefixInput);
+    if (!normalized) return;
+    setPolicyForm((prev) => {
+      if (prev.allowedPrefixes.includes(normalized)) return prev;
+      return {
+        ...prev,
+        allowedPrefixes: [...prev.allowedPrefixes, normalized],
+      };
+    });
+    setCustomPrefixInput("");
+  };
+
+  const selectFilteredModels = () => {
+    if (filteredModelOptions.length === 0) return;
+    setPolicyForm((prev) => ({
+      ...prev,
+      allowedModels: Array.from(new Set([...prev.allowedModels, ...filteredModelOptions])),
+    }));
+  };
+
+  const clearAllModels = () => {
+    setPolicyForm((prev) => ({
+      ...prev,
+      allowedModels: [],
+    }));
+  };
+
+  const addCustomModel = () => {
+    const normalized = normalizeModelValue(customModelInput);
+    if (!normalized) return;
+    setPolicyForm((prev) => {
+      if (prev.allowedModels.includes(normalized)) return prev;
+      return {
+        ...prev,
+        allowedModels: [...prev.allowedModels, normalized],
+      };
+    });
+    setCustomModelInput("");
   };
 
   const handleEnableTunnel = async () => {
@@ -547,6 +947,254 @@ export default function APIPageClient({ machineId }) {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-semibold">Advanced Key Policy</h2>
+            <p className="text-sm text-text-muted">Scope API keys by endpoint, prefix, model, and expiry</p>
+          </div>
+        </div>
+
+        {keys.length === 0 ? (
+          <p className="text-sm text-text-muted">Create an API key first to configure policy.</p>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <div className="grid md:grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium">Select Key</label>
+                <select
+                  value={policyKeyId}
+                  onChange={(e) => {
+                    const nextId = e.target.value;
+                    setPolicyKeyId(nextId);
+                    loadPolicy(nextId);
+                  }}
+                  className="w-full py-2 px-3 text-sm text-text-main bg-white dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-md"
+                >
+                  <option value="">Choose API key</option>
+                  {keys.map((key) => (
+                    <option key={key.id} value={key.id}>{key.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <Input
+                type="datetime-local"
+                label="Expires At"
+                value={policyForm.expiresAt}
+                onChange={(e) => setPolicyForm((prev) => ({ ...prev, expiresAt: e.target.value }))}
+                disabled={!policyKeyId || policyLoading || policySaving}
+              />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-medium">Allowed Prefixes</p>
+                <p className="text-xs text-text-muted">{policyForm.allowedPrefixes.length} selected</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={selectAllPrefixes}
+                  disabled={!policyKeyId || policyLoading || policySaving || mergedPrefixOptions.length === 0}
+                >
+                  Select All Prefixes
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={clearAllPrefixes}
+                  disabled={!policyKeyId || policyLoading || policySaving || policyForm.allowedPrefixes.length === 0}
+                >
+                  Clear Prefixes
+                </Button>
+              </div>
+
+              <div className="flex gap-2 items-center">
+                <Input
+                  placeholder="Add custom prefix (e.g. myprovider/)"
+                  value={customPrefixInput}
+                  onChange={(e) => setCustomPrefixInput(e.target.value)}
+                  disabled={!policyKeyId || policyLoading || policySaving}
+                  className="flex-1"
+                />
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={addCustomPrefix}
+                  disabled={!policyKeyId || policyLoading || policySaving || !normalizePrefixValue(customPrefixInput)}
+                >
+                  Add
+                </Button>
+              </div>
+
+              {mergedPrefixOptions.length === 0 ? (
+                <p className="text-sm text-text-muted">No prefix options available.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {mergedPrefixOptions.map((prefix) => {
+                    const selected = policyForm.allowedPrefixes.includes(prefix);
+                    return (
+                      <button
+                        key={prefix}
+                        type="button"
+                        onClick={() => togglePolicyPrefix(prefix)}
+                        disabled={!policyKeyId || policyLoading || policySaving}
+                        className={`px-2.5 py-1 rounded-md text-xs border transition-colors ${
+                          selected
+                            ? "bg-primary/10 border-primary/40 text-primary"
+                            : "border-black/10 dark:border-white/10 text-text-muted hover:text-text-main"
+                        }`}
+                      >
+                        {prefix}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-medium">Allowed Models</p>
+                <p className="text-xs text-text-muted">{policyForm.allowedModels.length} selected</p>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={selectFilteredModels}
+                  disabled={!policyKeyId || policyLoading || policySaving || filteredModelOptions.length === 0}
+                >
+                  Select Visible Models
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={clearAllModels}
+                  disabled={!policyKeyId || policyLoading || policySaving || policyForm.allowedModels.length === 0}
+                >
+                  Clear Models
+                </Button>
+              </div>
+
+              <Input
+                placeholder="Search and select models"
+                value={modelSearch}
+                onChange={(e) => setModelSearch(e.target.value)}
+                disabled={!policyKeyId || policyLoading || policySaving}
+                hint={`${filteredModelOptions.length} models shown`}
+              />
+
+              <div className="flex gap-2 items-center">
+                <Input
+                  placeholder="Add custom exact model"
+                  value={customModelInput}
+                  onChange={(e) => setCustomModelInput(e.target.value)}
+                  disabled={!policyKeyId || policyLoading || policySaving}
+                  className="flex-1"
+                />
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={addCustomModel}
+                  disabled={!policyKeyId || policyLoading || policySaving || !normalizeModelValue(customModelInput)}
+                >
+                  Add
+                </Button>
+              </div>
+
+              <div className="max-h-56 overflow-auto rounded-md border border-black/10 dark:border-white/10 p-2 space-y-1">
+                {filteredModelOptions.length === 0 ? (
+                  <p className="text-xs text-text-muted px-1 py-1">No models match your search.</p>
+                ) : (
+                  filteredModelOptions.map((model) => (
+                    <label
+                      key={model}
+                      className="flex items-center gap-2 text-sm p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={policyForm.allowedModels.includes(model)}
+                        onChange={() => togglePolicyModel(model)}
+                        disabled={!policyKeyId || policyLoading || policySaving}
+                      />
+                      <span className="font-mono text-xs break-all">{model}</span>
+                    </label>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-medium">Allowed Paths</p>
+                <p className="text-xs text-text-muted">{policyForm.allowedPaths.length} selected</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={selectAllPaths}
+                  disabled={!policyKeyId || policyLoading || policySaving}
+                >
+                  Select All Paths
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={clearAllPaths}
+                  disabled={!policyKeyId || policyLoading || policySaving || policyForm.allowedPaths.length === 0}
+                >
+                  Clear Paths
+                </Button>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-2">
+                {POLICY_PATH_OPTIONS.map((path) => (
+                  <label
+                    key={path}
+                    className="flex items-center gap-2 text-sm p-2 rounded border border-black/10 dark:border-white/10"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={policyForm.allowedPaths.includes(path)}
+                      onChange={() => togglePolicyPath(path)}
+                      disabled={!policyKeyId || policyLoading || policySaving}
+                    />
+                    <span className="font-mono text-xs">{path}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {policyStatus && (
+              <p className={`text-sm ${policyStatus.type === "error" ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
+                {policyStatus.message}
+              </p>
+            )}
+
+            <div className="flex gap-2">
+              <Button
+                onClick={savePolicy}
+                loading={policySaving}
+                disabled={!policyKeyId || policyLoading}
+              >
+                Save Policy
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={clearPolicy}
+                disabled={!policyKeyId || policyLoading || policySaving}
+              >
+                Clear Policy
+              </Button>
+            </div>
           </div>
         )}
       </Card>
