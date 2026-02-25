@@ -1,6 +1,91 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
-import { getProviderAlias } from "@/shared/constants/providers";
-import { getProviderConnections, getCombos } from "@/lib/localDb";
+import {
+  getProviderAlias,
+  isOpenAICompatibleProvider,
+  isAnthropicCompatibleProvider,
+} from "@/shared/constants/providers";
+import {
+  getProviderConnections,
+  getCombos,
+  getApiKeyByValue,
+  getApiKeyPolicy,
+} from "@/lib/localDb";
+import { extractApiKey, enforceApiKeyPolicy, isValidApiKey } from "@/sse/services/auth";
+import { evaluateApiKeyPolicy } from "@/shared/utils/apiKeyPolicy";
+
+const COMPATIBLE_MODELS_CACHE_TTL_MS = 60 * 1000;
+const compatibleModelsCache = new Map();
+
+function parseOpenAIStyleModels(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.models)) return data.models;
+  if (Array.isArray(data?.results)) return data.results;
+  return [];
+}
+
+function stripKnownPrefix(modelId, knownPrefixes = []) {
+  const value = String(modelId || "").trim();
+  if (!value) return "";
+  for (const prefix of knownPrefixes) {
+    if (!prefix) continue;
+    if (value.startsWith(`${prefix}/`)) {
+      return value.slice(prefix.length + 1);
+    }
+  }
+  return value;
+}
+
+async function fetchCompatibleModelIds(providerId, connection) {
+  const baseUrlRaw = connection?.providerSpecificData?.baseUrl;
+  const apiKey = connection?.apiKey;
+  if (!baseUrlRaw || !apiKey) {
+    return [];
+  }
+
+  const cacheKey = `${connection?.id || "unknown"}:${connection?.updatedAt || ""}:${baseUrlRaw}`;
+  const cached = compatibleModelsCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.modelIds;
+  }
+
+  let baseUrl = String(baseUrlRaw).trim().replace(/\/$/, "");
+  if (isAnthropicCompatibleProvider(providerId) && baseUrl.endsWith("/messages")) {
+    baseUrl = baseUrl.slice(0, -9);
+  }
+
+  const response = await fetch(`${baseUrl}/models`, {
+    method: "GET",
+    headers: isAnthropicCompatibleProvider(providerId)
+      ? {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          Authorization: `Bearer ${apiKey}`,
+        }
+      : {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+  });
+
+  if (!response.ok) {
+    return [];
+  }
+
+  const data = await response.json().catch(() => ({}));
+  const models = parseOpenAIStyleModels(data);
+  const modelIds = models
+    .map((item) => String(item?.id || item?.model || item?.name || "").trim())
+    .filter(Boolean);
+
+  compatibleModelsCache.set(cacheKey, {
+    modelIds,
+    expiresAt: Date.now() + COMPATIBLE_MODELS_CACHE_TTL_MS,
+  });
+
+  return modelIds;
+}
 
 /**
  * Handle CORS preflight
@@ -19,8 +104,29 @@ export async function OPTIONS() {
  * GET /v1/models - OpenAI compatible models list
  * Returns models from all active providers and combos in OpenAI format
  */
-export async function GET() {
+export async function GET(request) {
   try {
+    let apiKeyPolicy = null;
+    const apiKey = extractApiKey(request);
+    if (apiKey) {
+      const valid = await isValidApiKey(apiKey);
+      if (!valid) {
+        return Response.json({ error: { message: "Invalid API key", type: "auth_error" } }, { status: 401 });
+      }
+
+      const policy = await enforceApiKeyPolicy(apiKey, {
+        path: "/v1/models",
+      });
+      if (!policy.allowed) {
+        return Response.json({ error: { message: policy.reason || "API key policy violation", type: "forbidden" } }, { status: 403 });
+      }
+
+      const keyRecord = await getApiKeyByValue(apiKey);
+      if (keyRecord) {
+        apiKeyPolicy = await getApiKeyPolicy(keyRecord.id);
+      }
+    }
+
     // Get active provider connections
     let connections = [];
     try {
@@ -65,6 +171,24 @@ export async function GET() {
       });
     }
 
+    const compatibleModelIdsByProvider = new Map();
+    const compatibleEntries = Array.from(activeConnectionByProvider.entries()).filter(([providerId]) =>
+      isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId)
+    );
+
+    if (compatibleEntries.length > 0) {
+      await Promise.all(
+        compatibleEntries.map(async ([providerId, conn]) => {
+          try {
+            const modelIds = await fetchCompatibleModelIds(providerId, conn);
+            compatibleModelIdsByProvider.set(providerId, modelIds);
+          } catch {
+            compatibleModelIdsByProvider.set(providerId, []);
+          }
+        })
+      );
+    }
+
     // Add provider models
     if (connections.length === 0) {
       // DB unavailable or no active providers -> return all static models
@@ -84,9 +208,12 @@ export async function GET() {
     } else {
       for (const [providerId, conn] of activeConnectionByProvider.entries()) {
         const staticAlias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
-        const outputAlias = getProviderAlias(providerId) || staticAlias;
+        const outputAlias = conn?.providerSpecificData?.prefix || getProviderAlias(providerId) || staticAlias;
         const providerModels = PROVIDER_MODELS[staticAlias] || [];
         const enabledModels = conn?.providerSpecificData?.enabledModels;
+        const compatibleModelIds = compatibleModelIdsByProvider.get(providerId) || [];
+        const isCompatibleProvider =
+          isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
         const hasExplicitEnabledModels =
           Array.isArray(enabledModels) && enabledModels.length > 0;
 
@@ -94,28 +221,21 @@ export async function GET() {
         // If explicit selection exists, expose exactly those model IDs (including non-static IDs).
         const rawModelIds = hasExplicitEnabledModels
           ? Array.from(
-            new Set(
-              enabledModels.filter(
-                (modelId) => typeof modelId === "string" && modelId.trim() !== "",
+              new Set(
+                enabledModels.filter(
+                  (modelId) => typeof modelId === "string" && modelId.trim() !== "",
+                ),
               ),
-            ),
-          )
+            )
+          : isCompatibleProvider
+            ? Array.from(new Set(compatibleModelIds))
           : providerModels.map((model) => model.id);
 
-        const modelIds = rawModelIds
+        const modelIds = Array.from(new Set(rawModelIds
           .map((modelId) => {
-            if (modelId.startsWith(`${outputAlias}/`)) {
-              return modelId.slice(outputAlias.length + 1);
-            }
-            if (modelId.startsWith(`${staticAlias}/`)) {
-              return modelId.slice(staticAlias.length + 1);
-            }
-            if (modelId.startsWith(`${providerId}/`)) {
-              return modelId.slice(providerId.length + 1);
-            }
-            return modelId;
+            return stripKnownPrefix(modelId, [outputAlias, staticAlias, providerId]);
           })
-          .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
+          .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "")));
 
         for (const modelId of modelIds) {
           models.push({
@@ -131,9 +251,16 @@ export async function GET() {
       }
     }
 
+    const scopedModels = apiKeyPolicy
+      ? models.filter((model) => evaluateApiKeyPolicy(apiKeyPolicy, {
+          path: "/v1/models",
+          model: model.id,
+        }).allowed)
+      : models;
+
     return Response.json({
       object: "list",
-      data: models,
+      data: scopedModels,
     }, {
       headers: {
         "Access-Control-Allow-Origin": "*",

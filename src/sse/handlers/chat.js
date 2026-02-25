@@ -4,6 +4,7 @@ import {
   clearAccountError,
   extractApiKey,
   isValidApiKey,
+  enforceApiKeyPolicy,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
@@ -70,6 +71,18 @@ export async function handleChat(request, clientRawRequest = null) {
     if (!valid) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+    }
+  }
+
+  if (apiKey) {
+    const policyModel = typeof modelStr === "string" && modelStr.trim() ? modelStr : null;
+    const policy = await enforceApiKeyPolicy(apiKey, {
+      path: url.pathname,
+      model: policyModel,
+    });
+    if (!policy.allowed) {
+      log.warn("AUTH", `API key policy blocked request: ${policy.reason}`);
+      return errorResponse(HTTP_STATUS.FORBIDDEN, policy.reason || "API key policy violation");
     }
   }
 

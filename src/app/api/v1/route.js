@@ -1,3 +1,5 @@
+import { GET as getModels } from "@/app/api/v1/models/route";
+
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
@@ -14,19 +16,13 @@ export async function OPTIONS() {
 /**
  * GET /v1 - Return models list (OpenAI compatible)
  */
-export async function GET() {
-  const models = [
-    { id: "claude-sonnet-4-20250514", object: "model", owned_by: "anthropic" },
-    { id: "claude-3-5-sonnet-20241022", object: "model", owned_by: "anthropic" },
-    { id: "gpt-4o", object: "model", owned_by: "openai" },
-    { id: "gemini-2.5-pro", object: "model", owned_by: "google" }
-  ];
-
-  return new Response(JSON.stringify({
-    object: "list",
-    data: models
-  }), {
-    headers: { "Content-Type": "application/json", ...CORS_HEADERS }
+export async function GET(request) {
+  const response = await getModels(request);
+  const headers = new Headers(response.headers);
+  headers.set("Access-Control-Allow-Origin", "*");
+  return new Response(response.body, {
+    status: response.status,
+    headers,
   });
 }
 

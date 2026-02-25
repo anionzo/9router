@@ -1,6 +1,14 @@
-import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
+import {
+  getProviderConnections,
+  validateApiKey,
+  updateProviderConnection,
+  getSettings,
+  getApiKeyByValue,
+  getApiKeyPolicy,
+} from "@/lib/localDb";
 import { isAccountUnavailable, getUnavailableUntil, getEarliestRateLimitedUntil, formatRetryAfter, checkFallbackError } from "open-sse/services/accountFallback.js";
 import { resolveProviderId } from "@/shared/constants/providers.js";
+import { evaluateApiKeyPolicy } from "@/shared/utils/apiKeyPolicy";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
@@ -308,4 +316,21 @@ export function extractApiKey(request) {
 export async function isValidApiKey(apiKey) {
   if (!apiKey) return false;
   return await validateApiKey(apiKey);
+}
+
+/**
+ * Validate API key policy constraints (expiry, path, model scope)
+ */
+export async function enforceApiKeyPolicy(apiKey, { path = "", model = null } = {}) {
+  if (!apiKey) {
+    return { allowed: false, reason: "Missing API key" };
+  }
+
+  const keyRecord = await getApiKeyByValue(apiKey);
+  if (!keyRecord || keyRecord.isActive === false) {
+    return { allowed: false, reason: "Invalid API key" };
+  }
+
+  const policy = await getApiKeyPolicy(keyRecord.id);
+  return evaluateApiKeyPolicy(policy, { path, model });
 }
