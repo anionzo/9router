@@ -1,3 +1,6 @@
+import { getSettings } from "@/lib/localDb";
+import { extractApiKey, enforceApiKeyPolicy, isValidApiKey } from "@/sse/services/auth";
+
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -15,6 +18,37 @@ export async function OPTIONS() {
  * POST /v1/messages/count_tokens - Mock token count response
  */
 export async function POST(request) {
+  const settings = await getSettings();
+  const apiKey = extractApiKey(request);
+
+  if (settings.requireApiKey) {
+    if (!apiKey) {
+      return new Response(JSON.stringify({ error: "Missing API key" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json", ...CORS_HEADERS }
+      });
+    }
+    const valid = await isValidApiKey(apiKey);
+    if (!valid) {
+      return new Response(JSON.stringify({ error: "Invalid API key" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json", ...CORS_HEADERS }
+      });
+    }
+  }
+
+  if (apiKey) {
+    const policy = await enforceApiKeyPolicy(apiKey, {
+      path: new URL(request.url).pathname,
+    });
+    if (!policy.allowed) {
+      return new Response(JSON.stringify({ error: policy.reason || "API key policy violation" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json", ...CORS_HEADERS }
+      });
+    }
+  }
+
   let body;
   try {
     body = await request.json();
