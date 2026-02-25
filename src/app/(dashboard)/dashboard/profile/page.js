@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, Button, Badge, Toggle, Input } from "@/shared/components";
+import { Card, Button, Toggle, Input } from "@/shared/components";
 import { useTheme } from "@/shared/hooks/useTheme";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
@@ -13,6 +13,10 @@ export default function ProfilePage() {
   const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
   const [passStatus, setPassStatus] = useState({ type: "", message: "" });
   const [passLoading, setPassLoading] = useState(false);
+  const [dbCloudLoading, setDbCloudLoading] = useState(false);
+  const [dbCloudStatus, setDbCloudStatus] = useState({ type: "", message: "" });
+  const [cloudBackups, setCloudBackups] = useState([]);
+  const [backupsLoading, setBackupsLoading] = useState(false);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -25,7 +29,78 @@ export default function ProfilePage() {
         console.error("Failed to fetch settings:", err);
         setLoading(false);
       });
+
+    loadCloudBackups();
   }, []);
+
+  const loadCloudBackups = async () => {
+    setBackupsLoading(true);
+    try {
+      const res = await fetch("/api/settings/database/r2/backups");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to load cloud backups");
+      }
+      setCloudBackups(Array.isArray(data.backups) ? data.backups : []);
+    } catch (err) {
+      setDbCloudStatus({ type: "error", message: err.message || "Failed to load cloud backups" });
+    } finally {
+      setBackupsLoading(false);
+    }
+  };
+
+  const backupToCloud = async () => {
+    setDbCloudLoading(true);
+    setDbCloudStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/settings/database/r2/backup", {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to backup database to cloud");
+      }
+
+      setDbCloudStatus({ type: "success", message: "Cloud backup created successfully" });
+      await loadCloudBackups();
+    } catch (err) {
+      setDbCloudStatus({ type: "error", message: err.message || "Failed to backup database to cloud" });
+    } finally {
+      setDbCloudLoading(false);
+    }
+  };
+
+  const restoreFromCloud = async (key) => {
+    const confirmed = window.confirm("Restore this backup? Current data will be replaced.");
+    if (!confirmed) return;
+
+    setDbCloudLoading(true);
+    setDbCloudStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/settings/database/r2/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to restore backup");
+      }
+
+      const settingsRes = await fetch("/api/settings");
+      if (settingsRes.ok) {
+        const nextSettings = await settingsRes.json();
+        setSettings(nextSettings);
+      }
+
+      setDbCloudStatus({ type: "success", message: "Cloud backup restored successfully" });
+      await loadCloudBackups();
+    } catch (err) {
+      setDbCloudStatus({ type: "error", message: err.message || "Failed to restore backup" });
+    } finally {
+      setDbCloudLoading(false);
+    }
+  };
 
   const handlePasswordChange = async (e) => {
     e.preventDefault();
@@ -363,6 +438,75 @@ export default function ProfilePage() {
                 <p className="text-sm text-text-muted font-mono">~/.9router/db.json</p>
               </div>
             </div>
+
+            <div className="flex items-center justify-between p-4 rounded-lg bg-bg border border-border gap-3 flex-wrap">
+              <div>
+                <p className="font-medium">Cloud Backup (R2)</p>
+                <p className="text-sm text-text-muted">Encrypted backup using AES-256-GCM</p>
+              </div>
+              <Button
+                variant="secondary"
+                icon="cloud_upload"
+                onClick={backupToCloud}
+                loading={dbCloudLoading}
+              >
+                Backup to Cloud
+              </Button>
+            </div>
+
+            <div className="p-4 rounded-lg bg-bg border border-border flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <p className="font-medium">Cloud Backups</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  icon="refresh"
+                  onClick={loadCloudBackups}
+                  disabled={backupsLoading || dbCloudLoading}
+                >
+                  Refresh
+                </Button>
+              </div>
+
+              {backupsLoading ? (
+                <p className="text-sm text-text-muted">Loading backups...</p>
+              ) : cloudBackups.length === 0 ? (
+                <p className="text-sm text-text-muted">No cloud backups yet.</p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {cloudBackups.slice(0, 10).map((backup) => (
+                    <div
+                      key={backup.key}
+                      className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border/70"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{backup.name}</p>
+                        <p className="text-xs text-text-muted">
+                          {backup.lastModified ? new Date(backup.lastModified).toLocaleString() : "Unknown time"}
+                          {" · "}
+                          {Math.max(1, Math.round((backup.size || 0) / 1024))} KB
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        icon="restore"
+                        onClick={() => restoreFromCloud(backup.key)}
+                        disabled={dbCloudLoading}
+                      >
+                        Restore
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {dbCloudStatus.message && (
+              <p className={`text-sm ${dbCloudStatus.type === "error" ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
+                {dbCloudStatus.message}
+              </p>
+            )}
           </div>
         </Card>
 
