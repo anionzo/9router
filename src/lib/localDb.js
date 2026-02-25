@@ -795,12 +795,11 @@ export async function importDb(payload) {
     throw new Error("Invalid database payload");
   }
 
-  const defaults = cloneDefaultData();
   const nextData = {
-    ...defaults,
+    ...cloneDefaultData(),
     ...payload,
     settings: {
-      ...defaults.settings,
+      ...cloneDefaultData().settings,
       ...(payload.settings && typeof payload.settings === "object" && !Array.isArray(payload.settings)
         ? payload.settings
         : {}),
