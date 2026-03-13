@@ -1,4 +1,5 @@
-import { PROVIDERS, OAUTH_ENDPOINTS, GITHUB_COPILOT } from "../config/constants.js";
+import { PROVIDERS } from "../config/providers.js";
+import { OAUTH_ENDPOINTS, GITHUB_COPILOT } from "../config/appConstants.js";
 
 // Token expiry buffer (refresh if expires within 5 minutes)
 export const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
@@ -180,6 +181,9 @@ export async function refreshQwenToken(refreshToken, log) {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token || refreshToken,
         expiresIn: tokens.expires_in,
+        providerSpecificData: tokens.resource_url
+          ? { resourceUrl: tokens.resource_url }
+          : undefined,
       };
     } else {
       const errorText = await response.text().catch(() => "");

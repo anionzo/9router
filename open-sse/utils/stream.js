@@ -84,8 +84,10 @@ export function createSSEStream(options = {}) {
 
               // Ensure OpenAI-required fields are present on streaming chunks (Letta compat)
               let fieldsInjected = false;
-              if (!parsed.object) { parsed.object = "chat.completion.chunk"; fieldsInjected = true; }
-              if (!parsed.created) { parsed.created = Math.floor(Date.now() / 1000); fieldsInjected = true; }
+              if (parsed.choices !== undefined) {
+                if (!parsed.object) { parsed.object = "chat.completion.chunk"; fieldsInjected = true; }
+                if (!parsed.created) { parsed.created = Math.floor(Date.now() / 1000); fieldsInjected = true; }
+              }
 
               // Strip Azure-specific non-standard fields from streaming chunks
               if (parsed.prompt_filter_results !== undefined) {
@@ -157,10 +159,12 @@ export function createSSEStream(options = {}) {
         // Translate mode
         if (!trimmed) continue;
 
-        const parsed = parseSSELine(trimmed);
+        const parsed = parseSSELine(trimmed, targetFormat);
         if (!parsed) continue;
 
-        if (parsed && parsed.done) {
+        // For Ollama: done=true is the final chunk with finish_reason/usage, must translate
+        // For other formats: done=true is the [DONE] sentinel, skip
+        if (parsed && parsed.done && targetFormat !== FORMATS.OLLAMA) {
           const output = "data: [DONE]\n\n";
           reqLogger?.appendConvertedChunk?.(output);
           controller.enqueue(sharedEncoder.encode(output));

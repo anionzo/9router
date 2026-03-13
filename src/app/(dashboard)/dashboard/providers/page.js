@@ -99,7 +99,8 @@ export default function ProvidersPage() {
     );
 
     const getEffectiveStatus = (conn) => {
-      const isCooldown = conn.rateLimitedUntil && new Date(conn.rateLimitedUntil).getTime() > Date.now();
+      const isCooldown = Object.entries(conn)
+        .some(([k, v]) => k.startsWith("modelLock_") && v && new Date(v).getTime() > Date.now());
       return conn.testStatus === "unavailable" && !isCooldown ? "active" : conn.testStatus;
     };
 
@@ -213,15 +214,14 @@ export default function ProvidersPage() {
             <button
               onClick={() => handleBatchTest("oauth")}
               disabled={!!testingMode}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                testingMode === "oauth"
-                  ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
-                  : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
-              }`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${testingMode === "oauth"
+                ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
+                : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
+                }`}
               title="Test all OAuth connections"
               aria-label="Test all OAuth connections"
             >
-              <span className="material-symbols-outlined text-[14px]">
+              <span className={`material-symbols-outlined text-[14px]${testingMode === "oauth" ? " animate-spin" : ""}`}>
                 {testingMode === "oauth" ? "sync" : "play_arrow"}
               </span>
               {testingMode === "oauth" ? "Testing..." : "Test All"}
@@ -251,15 +251,14 @@ export default function ProvidersPage() {
           <button
             onClick={() => handleBatchTest("free")}
             disabled={!!testingMode}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-              testingMode === "free"
-                ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
-                : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${testingMode === "free"
+              ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
+              : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
               }`}
-              title="Test all Free connections"
+            title="Test all Free connections"
             aria-label="Test all Free provider connections"
           >
-            <span className="material-symbols-outlined text-[14px]">
+            <span className={`material-symbols-outlined text-[14px]${testingMode === "free" ? " animate-spin" : ""}`}>
               {testingMode === "free" ? "sync" : "play_arrow"}
             </span>
             {testingMode === "free" ? "Testing..." : "Test All"}
@@ -288,15 +287,14 @@ export default function ProvidersPage() {
           <button
             onClick={() => handleBatchTest("apikey")}
             disabled={!!testingMode}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-              testingMode === "apikey"
-                ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
-                : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${testingMode === "apikey"
+              ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
+              : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
               }`}
-              title="Test all API Key connections"
+            title="Test all API Key connections"
             aria-label="Test all API Key connections"
           >
-            <span className="material-symbols-outlined text-[14px]">
+            <span className={`material-symbols-outlined text-[14px]${testingMode === "apikey" ? " animate-spin" : ""}`}>
               {testingMode === "apikey" ? "sync" : "play_arrow"}
             </span>
             {testingMode === "apikey" ? "Testing..." : "Test All"}
@@ -323,23 +321,22 @@ export default function ProvidersPage() {
             API Key Compatible Providers{" "}
           </h2>
           <div className="flex gap-2">
-            {(compatibleProviders.length > 0 || anthropicCompatibleProviders.length > 0) && (
+            {/* {(compatibleProviders.length > 0 || anthropicCompatibleProviders.length > 0) && (
               <button
                 onClick={() => handleBatchTest("compatible")}
                 disabled={!!testingMode}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                  testingMode === "compatible"
-                    ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
-                    : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
-                }`}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${testingMode === "compatible"
+                  ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
+                  : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
+                  }`}
                 title="Test all Compatible connections"
               >
-                <span className="material-symbols-outlined text-[14px]">
+                <span className={`material-symbols-outlined text-[14px]${testingMode === "compatible" ? " animate-spin" : ""}`}>
                   {testingMode === "compatible" ? "sync" : "play_arrow"}
                 </span>
                 {testingMode === "compatible" ? "Testing..." : "Test All"}
               </button>
-            )}
+            )} */}
             <Button size="sm" icon="add" onClick={() => setShowAddAnthropicCompatibleModal(true)}>
               Add Anthropic Compatible
             </Button>
@@ -448,7 +445,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
           <div className="flex items-center gap-3">
             <div
               className="size-8 rounded-lg flex items-center justify-center"
-              style={{ backgroundColor: `${provider.color}15` }}
+              style={{ backgroundColor: `${provider.color?.length > 7 ? provider.color : provider.color + "15"}` }}
             >
               {imgError ? (
                 <span className="text-xs font-bold" style={{ color: provider.color }}>
@@ -500,7 +497,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
                 <Toggle
                   size="sm"
                   checked={!allDisabled}
-                  onChange={() => {}}
+                  onChange={() => { }}
                   title={allDisabled ? "Enable provider" : "Disable provider"}
                 />
               </div>
@@ -560,7 +557,7 @@ function ApiKeyProviderCard({ providerId, provider, stats, authType, onToggle })
           <div className="flex items-center gap-3">
             <div
               className="size-8 rounded-lg flex items-center justify-center"
-              style={{ backgroundColor: `${provider.color}15` }}
+              style={{ backgroundColor: `${provider.color?.length > 7 ? provider.color : provider.color + "15"}` }}
             >
               {imgError ? (
                 <span className="text-xs font-bold" style={{ color: provider.color }}>
@@ -620,7 +617,7 @@ function ApiKeyProviderCard({ providerId, provider, stats, authType, onToggle })
                 <Toggle
                   size="sm"
                   checked={!allDisabled}
-                  onChange={() => {}}
+                  onChange={() => { }}
                   title={allDisabled ? "Enable provider" : "Disable provider"}
                 />
               </div>
@@ -954,9 +951,8 @@ function ProviderTestResultsView({ results }) {
             <span className="text-text-muted font-mono tabular-nums">{r.latencyMs}ms</span>
           )}
           <span
-            className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${
-              r.valid ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400"
-            }`}
+            className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${r.valid ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400"
+              }`}
           >
             {r.valid ? "OK" : r.diagnosis?.type || "ERROR"}
           </span>

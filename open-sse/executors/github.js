@@ -1,9 +1,12 @@
 import { BaseExecutor } from "./base.js";
-import { PROVIDERS, OAUTH_ENDPOINTS, HTTP_STATUS, GITHUB_COPILOT } from "../config/constants.js";
+import { PROVIDERS } from "../config/providers.js";
+import { OAUTH_ENDPOINTS, GITHUB_COPILOT } from "../config/appConstants.js";
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { openaiToOpenAIResponsesRequest } from "../translator/request/openai-responses.js";
 import { openaiResponsesToOpenAIResponse } from "../translator/response/openai-responses.js";
 import { initState } from "../translator/index.js";
 import { parseSSELine, formatSSE } from "../utils/streamHelpers.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import crypto from "crypto";
 
 export class GithubExecutor extends BaseExecutor {
@@ -34,15 +37,59 @@ export class GithubExecutor extends BaseExecutor {
     };
   }
 
+  // Sanitize messages for GitHub Copilot /chat/completions endpoint.
+  // The endpoint only accepts 'text' and 'image_url' content part types.
+  // Tool-related content (tool_use, tool_result, thinking) must be serialized as text.
+  sanitizeMessagesForChatCompletions(body) {
+    if (!body?.messages) return body;
+
+    const sanitized = { ...body };
+    sanitized.messages = body.messages.map(msg => {
+      // assistant messages with only tool_calls have content: null — leave as-is
+      if (!msg.content) return msg;
+
+      // String content is always fine
+      if (typeof msg.content === "string") return msg;
+
+      // Array content: filter/convert unsupported part types
+      if (Array.isArray(msg.content)) {
+        const cleanContent = msg.content
+          .map(part => {
+            if (part.type === "text") return part;
+            if (part.type === "image_url") return part;
+            // Serialize tool_use, tool_result, thinking, etc. as text
+            const text = part.text || part.content || JSON.stringify(part);
+            return { type: "text", text: typeof text === "string" ? text : JSON.stringify(text) };
+          })
+          .filter(part => part.text !== ""); // remove empty text parts
+
+        // If all content was stripped (e.g. only tool_result with no text), drop content
+        return { ...msg, content: cleanContent.length > 0 ? cleanContent : null };
+      }
+
+      return msg;
+    });
+
+    return sanitized;
+  }
+
   async execute(options) {
     const { model, log } = options;
 
+    // Only use /responses for models that are explicitly known to need it (e.g. gpt codex models)
     if (this.knownCodexModels.has(model)) {
       log?.debug("GITHUB", `Using cached /responses route for ${model}`);
       return this.executeWithResponsesEndpoint(options);
     }
 
-    const result = await super.execute(options);
+    // Sanitize messages before sending to /chat/completions
+    // This handles Claude models on GitHub Copilot which reject non-text/image_url content types
+    const sanitizedOptions = {
+      ...options,
+      body: this.sanitizeMessagesForChatCompletions(options.body)
+    };
+
+    const result = await super.execute({ ...sanitizedOptions, proxyOptions: options.proxyOptions || null });
 
     if (result.response.status === HTTP_STATUS.BAD_REQUEST) {
       const errorBody = await result.response.clone().text();
@@ -57,7 +104,7 @@ export class GithubExecutor extends BaseExecutor {
     return result;
   }
 
-  async executeWithResponsesEndpoint({ model, body, stream, credentials, signal, log }) {
+  async executeWithResponsesEndpoint({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
     const url = this.config.responsesUrl;
     const headers = this.buildHeaders(credentials, stream);
 
@@ -65,12 +112,12 @@ export class GithubExecutor extends BaseExecutor {
 
     log?.debug("GITHUB", "Sending translated request to /responses");
 
-    const response = await fetch(url, {
+    const response = await proxyAwareFetch(url, {
       method: "POST",
       headers,
       body: JSON.stringify(transformedBody),
       signal
-    });
+    }, proxyOptions);
 
     if (!response.ok) {
       return { response, url, headers, transformedBody };

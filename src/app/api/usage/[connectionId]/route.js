@@ -1,9 +1,12 @@
+// Ensure proxyFetch is loaded to patch globalThis.fetch
+import "open-sse/index.js";
+
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 /**
  * Refresh credentials using executor and update database
- * @returns {{ connection, refreshed: boolean }}
+ * @returns Promise<{ connection, refreshed: boolean }>
  */
 async function refreshAndUpdateCredentials(connection) {
   const executor = getExecutor(connection.provider);
@@ -30,8 +33,8 @@ async function refreshAndUpdateCredentials(connection) {
   const refreshResult = await executor.refreshCredentials(credentials, console);
 
   if (!refreshResult) {
-    // For GitHub, if refreshCredentials fails but we still have accessToken, try to use it directly
-    if (connection.provider === "github" && connection.accessToken) {
+    // Refresh failed but we still have an accessToken — try with existing token
+    if (connection.accessToken) {
       return { connection, refreshed: false };
     }
     throw new Error("Failed to refresh credentials. Please re-authorize the connection.");
@@ -117,8 +120,7 @@ export async function GET(request, { params }) {
     const usage = await getUsageForProvider(connection);
     return Response.json(usage);
   } catch (error) {
-    console.error("[Usage API] Error fetching usage:", error);
-    console.error("[Usage API] Error stack:", error.stack);
+    console.warn(`[Usage] ${connection?.provider}: ${error.message}`);
     return Response.json({ error: error.message }, { status: 500 });
   }
 }

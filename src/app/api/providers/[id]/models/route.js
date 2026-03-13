@@ -44,6 +44,18 @@ const createOpenAIModelsConfig = (url) => ({
   parseResponse: parseOpenAIStyleModels
 });
 
+const resolveQwenModelsUrl = (connection) => {
+  const fallback = "https://portal.qwen.ai/v1/models";
+  const raw = connection?.providerSpecificData?.resourceUrl;
+  if (!raw || typeof raw !== "string") return fallback;
+  const value = raw.trim();
+  if (!value) return fallback;
+  if (value.startsWith("http://") || value.startsWith("https://")) {
+    return `${value.replace(/\/$/, "")}/models`;
+  }
+  return `https://${value.replace(/\/$/, "")}/v1/models`;
+};
+
 // Provider models endpoints configuration
 const PROVIDER_MODELS_CONFIG = {
   claude: {
@@ -120,6 +132,23 @@ const PROVIDER_MODELS_CONFIG = {
     parseResponse: (data) => data.data || []
   },
 
+  alicode: {
+    url: "https://coding.dashscope.aliyuncs.com/v1/models",
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    parseResponse: (data) => data.data || []
+  },
+  "alicode-intl": {
+    url: "https://coding-intl.dashscope.aliyuncs.com/v1/models",
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    parseResponse: (data) => data.data || []
+  },
+
   // OpenAI-compatible API key providers
   deepseek: createOpenAIModelsConfig("https://api.deepseek.com/models"),
   groq: createOpenAIModelsConfig("https://api.groq.com/openai/v1/models"),
@@ -133,6 +162,7 @@ const PROVIDER_MODELS_CONFIG = {
   nebius: createOpenAIModelsConfig("https://api.studio.nebius.ai/v1/models"),
   siliconflow: createOpenAIModelsConfig("https://api.siliconflow.cn/v1/models"),
   hyperbolic: createOpenAIModelsConfig("https://api.hyperbolic.xyz/v1/models"),
+  ollama: createOpenAIModelsConfig("https://ollama.com/api/tags"),
   nanobanana: createOpenAIModelsConfig("https://api.nanobananaapi.ai/v1/models"),
   chutes: createOpenAIModelsConfig("https://llm.chutes.ai/v1/models"),
   nvidia: createOpenAIModelsConfig("https://integrate.api.nvidia.com/v1/models"),
@@ -331,6 +361,9 @@ export async function GET(request, { params }) {
 
     // Build request URL
     let url = config.url;
+    if (connection.provider === "qwen") {
+      url = resolveQwenModelsUrl(connection);
+    }
     if (config.authQuery) {
       url += `?${config.authQuery}=${token}`;
     }

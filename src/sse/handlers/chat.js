@@ -1,3 +1,5 @@
+import "open-sse/index.js";
+
 import {
   getProviderCredentials,
   markAccountUnavailable,
@@ -11,7 +13,8 @@ import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { handleComboChat } from "open-sse/services/combo.js";
-import { HTTP_STATUS } from "open-sse/config/constants.js";
+import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
+import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
@@ -166,8 +169,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     }
 
     // Log account selection
-    const accountId = credentials.connectionId.slice(0, 8);
-    log.info("AUTH", `Using ${provider} account: ${accountId}...`);
+    log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
@@ -182,6 +184,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     }
 
     // Use shared chatCore
+    const chatSettings = await getSettings();
     const result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
       modelInfo: { provider, model },
@@ -191,6 +194,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       connectionId: credentials.connectionId,
       userAgent,
       apiKey,
+      ccFilterNaming: !!chatSettings.ccFilterNaming,
+      // Detect source format by endpoint + body
+      sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           accessToken: newCreds.accessToken,
@@ -200,7 +206,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         });
       },
       onRequestSuccess: async () => {
-        await clearAccountError(credentials.connectionId, credentials);
+        await clearAccountError(credentials.connectionId, credentials, model);
       }
     });
 
@@ -210,7 +216,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
 
     if (shouldFallback) {
-      log.warn("AUTH", `Account ${accountId}... unavailable (${result.status}), trying fallback`);
+      log.warn("AUTH", `Account ${credentials.connectionName} unavailable (${result.status}), trying fallback`);
       excludeConnectionId = credentials.connectionId;
       lastError = result.error;
       lastStatus = result.status;

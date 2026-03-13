@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getProviderNodeById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { getDefaultModel } from "open-sse/config/providerModels.js";
 
 // POST /api/providers/validate - Validate API key with provider
 export async function POST(request) {
@@ -102,17 +103,22 @@ export async function POST(request) {
         case "glm-cn":
         case "kimi":
         case "minimax":
-        case "minimax-cn": {
+        case "minimax-cn":
+        case "alicode-intl":
+        case "alicode": {
           const claudeBaseUrls = {
             glm: "https://api.z.ai/api/anthropic/v1/messages",
             "glm-cn": "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions",
             kimi: "https://api.kimi.com/coding/v1/messages",
             minimax: "https://api.minimax.io/anthropic/v1/messages",
             "minimax-cn": "https://api.minimaxi.com/anthropic/v1/messages",
+            alicode: "https://coding.dashscope.aliyuncs.com/v1/chat/completions",
+            "alicode-intl": "https://coding-intl.dashscope.aliyuncs.com/v1/chat/completions",
           };
 
-          // glm-cn uses OpenAI format
-          if (provider === "glm-cn") {
+          // glm-cn, alicode and alicode-intl use OpenAI format
+          if (provider === "glm-cn" || provider === "alicode" || provider === "alicode-intl") {
+            const testModel = getDefaultModel(provider);
             const glmCnRes = await fetch(claudeBaseUrls[provider], {
               method: "POST",
               headers: {
@@ -120,7 +126,7 @@ export async function POST(request) {
                 "content-type": "application/json",
               },
               body: JSON.stringify({
-                model: "glm-4.7",
+                model: testModel,
                 max_tokens: 1,
                 messages: [{ role: "user", content: "test" }],
               }),
@@ -157,6 +163,7 @@ export async function POST(request) {
         case "nebius":
         case "siliconflow":
         case "hyperbolic":
+        case "ollama":
         case "assemblyai":
         case "nanobanana":
         case "chutes":
@@ -174,6 +181,7 @@ export async function POST(request) {
             nebius: "https://api.studio.nebius.ai/v1/models",
             siliconflow: "https://api.siliconflow.cn/v1/models",
             hyperbolic: "https://api.hyperbolic.xyz/v1/models",
+            ollama: "https://ollama.com/api/tags",
             assemblyai: "https://api.assemblyai.com/v1/account",
             nanobanana: "https://api.nanobananaapi.ai/v1/models",
             chutes: "https://llm.chutes.ai/v1/models",

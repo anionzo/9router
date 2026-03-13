@@ -10,7 +10,7 @@ import { getSettings } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
 import { handleEmbeddingsCore } from "open-sse/handlers/embeddingsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
-import { HTTP_STATUS } from "open-sse/config/constants.js";
+import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 
@@ -116,8 +116,7 @@ export async function handleEmbeddings(request) {
       return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
     }
 
-    const accountId = credentials.connectionId.slice(0, 8);
-    log.info("AUTH", `Using ${provider} account: ${accountId}...`);
+    log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
@@ -135,7 +134,7 @@ export async function handleEmbeddings(request) {
         });
       },
       onRequestSuccess: async () => {
-        await clearAccountError(credentials.connectionId, credentials);
+        await clearAccountError(credentials.connectionId, credentials, model);
       }
     });
 
@@ -144,7 +143,7 @@ export async function handleEmbeddings(request) {
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
 
     if (shouldFallback) {
-      log.warn("AUTH", `Account ${accountId}... unavailable (${result.status}), trying fallback`);
+      log.warn("AUTH", `Account ${credentials.connectionName} unavailable (${result.status}), trying fallback`);
       excludeConnectionId = credentials.connectionId;
       lastError = result.error;
       lastStatus = result.status;
